@@ -1,0 +1,506 @@
+;	Static Name Aliases
+;
+	TITLE   .\src\gdtmem.c
+	.8087
+INCLUDELIB	LLIBCE
+MAINSEG	SEGMENT  WORD PUBLIC 'CODE'
+MAINSEG	ENDS
+_DATA	SEGMENT  WORD PUBLIC 'DATA'
+_DATA	ENDS
+CONST	SEGMENT  WORD PUBLIC 'CONST'
+CONST	ENDS
+_BSS	SEGMENT  WORD PUBLIC 'BSS'
+_BSS	ENDS
+DGROUP	GROUP	CONST, _BSS, _DATA
+	ASSUME DS: DGROUP
+	ASSUME  SS: NOTHING
+EXTRN	_dev_help:FAR
+EXTRN	_dev_help1:FAR
+MAINSEG      SEGMENT
+	ASSUME	CS: MAINSEG
+;|*** /******************************************************************************/
+; Line 1
+;|*** /* Routines for managing GDT accessed memory                                  */
+;|*** /*                                                                            */
+;|*** /* -------------------------------------------------------------------------- */
+;|*** /*                                                                            */
+;|*** /* unsigned int get_gdt_slots(count,loc)                                      */
+;|*** /* int count;                                                                 */
+;|*** /* char *loc;                                                                 */
+;|*** /*                                                                            */
+;|*** /* This function will allocate count GDT selectors and store the selector     */
+;|*** /* values in the array pointed to by loc.  If successful, it returns 0.  If   */
+;|*** /* unsuccessful, it returns 1.                                                */
+;|*** /*                                                                            */
+;|*** /* -------------------------------------------------------------------------- */
+;|*** /*                                                                            */
+;|*** /* char *phys_to_gdt(loc,count,sel)                                           */
+;|*** /* _32bits loc;                                                              */
+;|*** /* unsigned count; (0 = 65536)                                                */
+;|*** /* unsigned sel;                                                              */
+;|*** /*                                                                            */
+;|*** /* This function will make a physical block of memory addressable via the GDT.*/
+;|*** /* It makes the GDT selector sel point to a valid descriptor for the memory   */
+;|*** /* block at loc of size count.  It returns a valid far pointer to the memory  */
+;|*** /* if successful, 0000:0000 if failure.                                       */
+;|*** /*                                                                            */
+;|*** /* -------------------------------------------------------------------------- */
+;|*** /*                                                                            */
+;|*** /* _32bits get_phys_addr(addr)                                               */
+;|*** /* char *addr;                                                                */
+;|*** /*                                                                            */
+;|*** /* This function will return the physical address of the virtual address      */
+;|*** /* passed as a paramter.  If the address is invalid, it returns 00000000.     */
+;|*** /*                                                                            */
+;|*** /* -------------------------------------------------------------------------- */
+;|*** /*                                                                            */
+;|*** /* int verify_acc(addr,size,acc_type)                                         */
+;|*** /* unsigned *addr;                                                            */
+;|*** /* unsigned size;                                                             */
+;|*** /* unsigned acc_type;                                                         */
+;|*** /*                                                                            */
+;|*** /* This function will verify the current LDT access of the segment.  It       */
+;|*** /* returns -1 if access is denied and 0 OK.                                   */
+;|*** /*                                                                            */
+;|*** /******************************************************************************/
+;|*** #include "genscsi.h"
+; Line 45
+;|*** #include "const.h"
+; Line 1
+;|*** #include "struc.h"
+; Line 2
+;|*** #include "externs.h"
+; Line 3
+;|*** 
+;|*** word far get_gdt_slots(word count, _32bits loc)
+;|*** {
+; Line 48
+	PUBLIC	_get_gdt_slots
+_get_gdt_slots	PROC FAR
+	*** 000000	55 			push	bp
+	*** 000001	8b ec 			mov	bp,sp
+	*** 000003	81 ec 2c 00 		sub	sp,44
+	*** 000007	57 			push	di
+	*** 000008	56 			push	si
+;	in_regs = -22
+;	out_regs = -44
+;	loc = 8
+;	count = 6
+;|***   union cpu_regs in_regs,out_regs;
+;|*** 
+;|***   in_regs.W.ES = loc._segadr.segment;      /* ES:DI point to the GDT slot    */
+; Line 51
+	*** 000009	8b 46 0a 		mov	ax,WORD PTR [bp+10]
+	*** 00000c	89 46 f6 		mov	WORD PTR [bp-10],ax
+;|***   in_regs.W.DI = loc._segadr.offset;       /*  array to be filled by OS/2    */
+; Line 52
+	*** 00000f	8b 46 08 		mov	ax,WORD PTR [bp+8]	;loc
+	*** 000012	89 46 f4 		mov	WORD PTR [bp-12],ax
+;|***   in_regs.W.CX = count;                    /* How many GDT slots to get      */
+; Line 53
+	*** 000015	8b 46 06 		mov	ax,WORD PTR [bp+6]	;count
+	*** 000018	89 46 ee 		mov	WORD PTR [bp-18],ax
+;|***   in_regs.B.DL = devhlp_AllocGDTSelector;  /* The DevHlp command             */
+; Line 54
+	*** 00001b	c6 46 f0 2d 		mov	BYTE PTR [bp-16],45
+;|***   in_regs.W.es_valid = TRUE;               /* Use the struc value of ES      */
+; Line 55
+	*** 00001f	c6 46 fe 01 		mov	BYTE PTR [bp-2],1
+;|***   in_regs.W.ds_valid = FALSE;              /* Use the register value of DS   */
+; Line 56
+	*** 000023	c6 46 ff 00 		mov	BYTE PTR [bp-1],0
+;|***   dev_help(&in_regs,&out_regs);            /* GO                             */
+; Line 57
+	*** 000027	8d 46 d4 		lea	ax,WORD PTR [bp-44]	;out_regs
+	*** 00002a	16 			push	ss
+	*** 00002b	50 			push	ax
+	*** 00002c	8d 46 ea 		lea	ax,WORD PTR [bp-22]	;in_regs
+	*** 00002f	16 			push	ss
+	*** 000030	50 			push	ax
+	*** 000031	9a 00 00 00 00 		call	FAR PTR _dev_help
+	*** 000036	83 c4 08 		add	sp,8
+;|***   if ((out_regs.W.flags & 0x0001) != 0) {  /* Check for failure              */
+; Line 58
+	*** 000039	f6 46 e6 01 		test	BYTE PTR [bp-26],1
+	*** 00003d	75 03 			jne	$JCC61
+	*** 00003f	e9 06 00 		jmp	$I184
+					$JCC61:
+;|***      return(1);
+; Line 59
+	*** 000042	b8 01 00 		mov	ax,1
+	*** 000045	e9 06 00 		jmp	$EX181
+;|***      }
+; Line 60
+;|***   return(0);                               /* Success return path            */
+; Line 61
+					$I184:
+	*** 000048	b8 00 00 		mov	ax,0
+	*** 00004b	e9 00 00 		jmp	$EX181
+;|*** }
+; Line 62
+					$EX181:
+	*** 00004e	5e 			pop	si
+	*** 00004f	5f 			pop	di
+	*** 000050	8b e5 			mov	sp,bp
+	*** 000052	5d 			pop	bp
+	*** 000053	cb 			ret	
+
+_get_gdt_slots	ENDP
+;|*** 
+;|*** _32bits far phys_to_gdt( _32bits loc, word count, word sel)
+;|*** {
+; Line 65
+	PUBLIC	_phys_to_gdt
+_phys_to_gdt	PROC FAR
+	*** 000054	55 			push	bp
+	*** 000055	8b ec 			mov	bp,sp
+	*** 000057	81 ec 30 00 		sub	sp,48
+	*** 00005b	57 			push	di
+	*** 00005c	56 			push	si
+;	in_regs = -26
+;	out_regs = -48
+;	pointer = -4
+;	sel = 12
+;	count = 10
+;	loc = 6
+;|***   union cpu_regs in_regs,out_regs;
+;|***   _32bits pointer;
+;|*** 
+;|***   in_regs.W.AX = loc._2words.high;         /* AX:BX hold the phys address    */
+; Line 69
+	*** 00005d	8b 46 08 		mov	ax,WORD PTR [bp+8]
+	*** 000060	89 46 e6 		mov	WORD PTR [bp-26],ax	;in_regs
+;|***   in_regs.W.BX = loc._2words.low;
+; Line 70
+	*** 000063	8b 46 06 		mov	ax,WORD PTR [bp+6]	;loc
+	*** 000066	89 46 e8 		mov	WORD PTR [bp-24],ax
+;|***   in_regs.W.SI = sel;                      /* The selector to use            */
+; Line 71
+	*** 000069	8b 46 0c 		mov	ax,WORD PTR [bp+12]	;sel
+	*** 00006c	89 46 ee 		mov	WORD PTR [bp-18],ax
+;|***   in_regs.W.CX = count;                    /* The size of the segment (0=64K)*/
+; Line 72
+	*** 00006f	8b 46 0a 		mov	ax,WORD PTR [bp+10]	;count
+	*** 000072	89 46 ea 		mov	WORD PTR [bp-22],ax
+;|***   in_regs.B.DL = devhlp_PhysToGDTSelector; /* The DevHlp command             */
+; Line 73
+	*** 000075	c6 46 ec 2e 		mov	BYTE PTR [bp-20],46
+;|***   in_regs.W.es_valid = FALSE;              /* Neither DS or ES in the struct */
+; Line 74
+	*** 000079	c6 46 fa 00 		mov	BYTE PTR [bp-6],0
+;|***   in_regs.W.ds_valid = FALSE;              /*   is a valid selector          */
+; Line 75
+	*** 00007d	c6 46 fb 00 		mov	BYTE PTR [bp-5],0
+;|***   dev_help(&in_regs,&out_regs);            /* Do it                          */
+; Line 76
+	*** 000081	8d 46 d0 		lea	ax,WORD PTR [bp-48]	;out_regs
+	*** 000084	16 			push	ss
+	*** 000085	50 			push	ax
+	*** 000086	8d 46 e6 		lea	ax,WORD PTR [bp-26]	;in_regs
+	*** 000089	16 			push	ss
+	*** 00008a	50 			push	ax
+	*** 00008b	9a 00 00 00 00 		call	FAR PTR _dev_help
+	*** 000090	83 c4 08 		add	sp,8
+;|***   if ((out_regs.W.flags & 0x0001) != 0) {  /* Check for failure              */
+; Line 77
+	*** 000093	f6 46 e2 01 		test	BYTE PTR [bp-30],1
+	*** 000097	75 03 			jne	$JCC151
+	*** 000099	e9 11 00 		jmp	$I192
+					$JCC151:
+;|***      pointer.phys = 0L;                    /* Return a NULL pointer if fail  */
+; Line 78
+	*** 00009c	2b c0 			sub	ax,ax
+	*** 00009e	89 46 fe 		mov	WORD PTR [bp-2],ax
+	*** 0000a1	89 46 fc 		mov	WORD PTR [bp-4],ax	;pointer
+;|***      return(pointer);
+; Line 79
+	*** 0000a4	8b 46 fc 		mov	ax,WORD PTR [bp-4]	;pointer
+	*** 0000a7	8b 56 fe 		mov	dx,WORD PTR [bp-2]
+	*** 0000aa	e9 14 00 		jmp	$EX188
+;|***      }
+; Line 80
+;|***   pointer._2words.high = sel;              /* Return a valid pointer if OK   */
+; Line 81
+					$I192:
+	*** 0000ad	8b 46 0c 		mov	ax,WORD PTR [bp+12]	;sel
+	*** 0000b0	89 46 fe 		mov	WORD PTR [bp-2],ax
+;|***   pointer._2words.low = 0;
+; Line 82
+	*** 0000b3	c7 46 fc 00 00 		mov	WORD PTR [bp-4],0	;pointer
+;|***   return(pointer);
+; Line 83
+	*** 0000b8	8b 46 fc 		mov	ax,WORD PTR [bp-4]	;pointer
+	*** 0000bb	8b 56 fe 		mov	dx,WORD PTR [bp-2]
+	*** 0000be	e9 00 00 		jmp	$EX188
+;|*** }
+; Line 84
+					$EX188:
+	*** 0000c1	5e 			pop	si
+	*** 0000c2	5f 			pop	di
+	*** 0000c3	8b e5 			mov	sp,bp
+	*** 0000c5	5d 			pop	bp
+	*** 0000c6	cb 			ret	
+
+_phys_to_gdt	ENDP
+;|*** 
+;|*** _32bits far get_phys_addr( _32bits addr)
+;|*** {
+; Line 87
+	PUBLIC	_get_phys_addr
+_get_phys_addr	PROC FAR
+	*** 0000c7	55 			push	bp
+	*** 0000c8	8b ec 			mov	bp,sp
+	*** 0000ca	81 ec 30 00 		sub	sp,48
+	*** 0000ce	57 			push	di
+	*** 0000cf	56 			push	si
+;	in_regs = -26
+;	out_regs = -48
+;	pointer = -4
+;	addr = 6
+;|***   union cpu_regs in_regs,out_regs;
+;|***   _32bits pointer;
+;|*** 
+;|***   /* allocate the memory */
+;|***   in_regs.W.SI = addr._segadr.offset;
+; Line 92
+	*** 0000d0	8b 46 06 		mov	ax,WORD PTR [bp+6]	;addr
+	*** 0000d3	89 46 ee 		mov	WORD PTR [bp-18],ax
+;|***   in_regs.W.DS = addr._segadr.segment;
+; Line 93
+	*** 0000d6	8b 46 08 		mov	ax,WORD PTR [bp+8]
+	*** 0000d9	89 46 f4 		mov	WORD PTR [bp-12],ax
+;|***   in_regs.B.DL = devhlp_VirtToPhys;
+; Line 94
+	*** 0000dc	c6 46 ec 16 		mov	BYTE PTR [bp-20],22
+;|***   in_regs.W.es_valid = FALSE;
+; Line 95
+	*** 0000e0	c6 46 fa 00 		mov	BYTE PTR [bp-6],0
+;|***   in_regs.W.ds_valid = TRUE;
+; Line 96
+	*** 0000e4	c6 46 fb 01 		mov	BYTE PTR [bp-5],1
+;|***   dev_help(&in_regs,&out_regs);
+; Line 97
+	*** 0000e8	8d 46 d0 		lea	ax,WORD PTR [bp-48]	;out_regs
+	*** 0000eb	16 			push	ss
+	*** 0000ec	50 			push	ax
+	*** 0000ed	8d 46 e6 		lea	ax,WORD PTR [bp-26]	;in_regs
+	*** 0000f0	16 			push	ss
+	*** 0000f1	50 			push	ax
+	*** 0000f2	9a 00 00 00 00 		call	FAR PTR _dev_help
+	*** 0000f7	83 c4 08 		add	sp,8
+;|***   if ((out_regs.W.flags & 0x0001) != 0) {
+; Line 98
+	*** 0000fa	f6 46 e2 01 		test	BYTE PTR [bp-30],1
+	*** 0000fe	75 03 			jne	$JCC254
+	*** 000100	e9 11 00 		jmp	$I198
+					$JCC254:
+;|***      pointer.phys = 0L;
+; Line 99
+	*** 000103	2b c0 			sub	ax,ax
+	*** 000105	89 46 fe 		mov	WORD PTR [bp-2],ax
+	*** 000108	89 46 fc 		mov	WORD PTR [bp-4],ax	;pointer
+;|***      return(pointer);
+; Line 100
+	*** 00010b	8b 46 fc 		mov	ax,WORD PTR [bp-4]	;pointer
+	*** 00010e	8b 56 fe 		mov	dx,WORD PTR [bp-2]
+	*** 000111	e9 15 00 		jmp	$EX194
+;|***      }
+; Line 101
+;|***   pointer._2words.high = out_regs.W.AX;
+; Line 102
+					$I198:
+	*** 000114	8b 46 d0 		mov	ax,WORD PTR [bp-48]	;out_regs
+	*** 000117	89 46 fe 		mov	WORD PTR [bp-2],ax
+;|***   pointer._2words.low = out_regs.W.BX;
+; Line 103
+	*** 00011a	8b 46 d2 		mov	ax,WORD PTR [bp-46]
+	*** 00011d	89 46 fc 		mov	WORD PTR [bp-4],ax	;pointer
+;|***   return(pointer);
+; Line 104
+	*** 000120	8b 46 fc 		mov	ax,WORD PTR [bp-4]	;pointer
+	*** 000123	8b 56 fe 		mov	dx,WORD PTR [bp-2]
+	*** 000126	e9 00 00 		jmp	$EX194
+;|*** 
+;|*** }
+; Line 106
+					$EX194:
+	*** 000129	5e 			pop	si
+	*** 00012a	5f 			pop	di
+	*** 00012b	8b e5 			mov	sp,bp
+	*** 00012d	5d 			pop	bp
+	*** 00012e	cb 			ret	
+
+_get_phys_addr	ENDP
+;|*** 
+;|*** _32bits far get_phys_addr1( _32bits addr)
+;|*** {
+; Line 109
+	PUBLIC	_get_phys_addr1
+_get_phys_addr1	PROC FAR
+	*** 00012f	55 			push	bp
+	*** 000130	8b ec 			mov	bp,sp
+	*** 000132	81 ec 30 00 		sub	sp,48
+	*** 000136	57 			push	di
+	*** 000137	56 			push	si
+;	in_regs = -26
+;	out_regs = -48
+;	pointer = -4
+;	addr = 6
+;|***   union cpu_regs in_regs,out_regs;
+;|***   _32bits pointer;
+;|*** 
+;|***   /* allocate the memory */
+;|***   in_regs.W.SI = addr._segadr.offset;
+; Line 114
+	*** 000138	8b 46 06 		mov	ax,WORD PTR [bp+6]	;addr
+	*** 00013b	89 46 ee 		mov	WORD PTR [bp-18],ax
+;|***   in_regs.W.DS = addr._segadr.segment;
+; Line 115
+	*** 00013e	8b 46 08 		mov	ax,WORD PTR [bp+8]
+	*** 000141	89 46 f4 		mov	WORD PTR [bp-12],ax
+;|***   in_regs.B.DL = devhlp_VirtToPhys;
+; Line 116
+	*** 000144	c6 46 ec 16 		mov	BYTE PTR [bp-20],22
+;|***   in_regs.W.es_valid = FALSE;
+; Line 117
+	*** 000148	c6 46 fa 00 		mov	BYTE PTR [bp-6],0
+;|***   in_regs.W.ds_valid = TRUE;
+; Line 118
+	*** 00014c	c6 46 fb 01 		mov	BYTE PTR [bp-5],1
+;|***   dev_help1(&in_regs,&out_regs);
+; Line 119
+	*** 000150	8d 46 d0 		lea	ax,WORD PTR [bp-48]	;out_regs
+	*** 000153	16 			push	ss
+	*** 000154	50 			push	ax
+	*** 000155	8d 46 e6 		lea	ax,WORD PTR [bp-26]	;in_regs
+	*** 000158	16 			push	ss
+	*** 000159	50 			push	ax
+	*** 00015a	9a 00 00 00 00 		call	FAR PTR _dev_help1
+	*** 00015f	83 c4 08 		add	sp,8
+;|***   if ((out_regs.W.flags & 0x0001) != 0) {
+; Line 120
+	*** 000162	f6 46 e2 01 		test	BYTE PTR [bp-30],1
+	*** 000166	75 03 			jne	$JCC358
+	*** 000168	e9 11 00 		jmp	$I204
+					$JCC358:
+;|***      pointer.phys = 0L;
+; Line 121
+	*** 00016b	2b c0 			sub	ax,ax
+	*** 00016d	89 46 fe 		mov	WORD PTR [bp-2],ax
+	*** 000170	89 46 fc 		mov	WORD PTR [bp-4],ax	;pointer
+;|***      return(pointer);
+; Line 122
+	*** 000173	8b 46 fc 		mov	ax,WORD PTR [bp-4]	;pointer
+	*** 000176	8b 56 fe 		mov	dx,WORD PTR [bp-2]
+	*** 000179	e9 15 00 		jmp	$EX200
+;|***      }
+; Line 123
+;|***   pointer._2words.high = out_regs.W.AX;
+; Line 124
+					$I204:
+	*** 00017c	8b 46 d0 		mov	ax,WORD PTR [bp-48]	;out_regs
+	*** 00017f	89 46 fe 		mov	WORD PTR [bp-2],ax
+;|***   pointer._2words.low = out_regs.W.BX;
+; Line 125
+	*** 000182	8b 46 d2 		mov	ax,WORD PTR [bp-46]
+	*** 000185	89 46 fc 		mov	WORD PTR [bp-4],ax	;pointer
+;|***   return(pointer);
+; Line 126
+	*** 000188	8b 46 fc 		mov	ax,WORD PTR [bp-4]	;pointer
+	*** 00018b	8b 56 fe 		mov	dx,WORD PTR [bp-2]
+	*** 00018e	e9 00 00 		jmp	$EX200
+;|*** 
+;|*** }
+; Line 128
+					$EX200:
+	*** 000191	5e 			pop	si
+	*** 000192	5f 			pop	di
+	*** 000193	8b e5 			mov	sp,bp
+	*** 000195	5d 			pop	bp
+	*** 000196	cb 			ret	
+
+_get_phys_addr1	ENDP
+;|*** 
+;|*** word far verify_acc( _32bits addr, word size, word acc_type)
+;|*** {
+; Line 131
+	PUBLIC	_verify_acc
+_verify_acc	PROC FAR
+	*** 000197	55 			push	bp
+	*** 000198	8b ec 			mov	bp,sp
+	*** 00019a	81 ec 2c 00 		sub	sp,44
+	*** 00019e	57 			push	di
+	*** 00019f	56 			push	si
+;	in_regs = -22
+;	out_regs = -44
+;	acc_type = 12
+;	size = 10
+;	addr = 6
+;|***   union cpu_regs in_regs,out_regs;
+;|*** 
+;|***   /* allocate the memory */
+;|***   in_regs.W.CX = size;
+; Line 135
+	*** 0001a0	8b 46 0a 		mov	ax,WORD PTR [bp+10]	;size
+	*** 0001a3	89 46 ee 		mov	WORD PTR [bp-18],ax
+;|***   in_regs.W.DI = addr._segadr.offset;
+; Line 136
+	*** 0001a6	8b 46 06 		mov	ax,WORD PTR [bp+6]	;addr
+	*** 0001a9	89 46 f4 		mov	WORD PTR [bp-12],ax
+;|***   in_regs.W.AX = addr._segadr.segment;
+; Line 137
+	*** 0001ac	8b 46 08 		mov	ax,WORD PTR [bp+8]
+	*** 0001af	89 46 ea 		mov	WORD PTR [bp-22],ax	;in_regs
+;|***   in_regs.B.DH = (byte)acc_type;
+; Line 138
+	*** 0001b2	8a 46 0c 		mov	al,BYTE PTR [bp+12]	;acc_type
+	*** 0001b5	88 46 f1 		mov	BYTE PTR [bp-15],al
+;|***   in_regs.B.DL = devhlp_VerifyAccess;
+; Line 139
+	*** 0001b8	c6 46 f0 27 		mov	BYTE PTR [bp-16],39
+;|***   in_regs.W.es_valid = FALSE;
+; Line 140
+	*** 0001bc	c6 46 fe 00 		mov	BYTE PTR [bp-2],0
+;|***   in_regs.W.ds_valid = FALSE;
+; Line 141
+	*** 0001c0	c6 46 ff 00 		mov	BYTE PTR [bp-1],0
+;|***   dev_help(&in_regs,&out_regs);
+; Line 142
+	*** 0001c4	8d 46 d4 		lea	ax,WORD PTR [bp-44]	;out_regs
+	*** 0001c7	16 			push	ss
+	*** 0001c8	50 			push	ax
+	*** 0001c9	8d 46 ea 		lea	ax,WORD PTR [bp-22]	;in_regs
+	*** 0001cc	16 			push	ss
+	*** 0001cd	50 			push	ax
+	*** 0001ce	9a 00 00 00 00 		call	FAR PTR _dev_help
+	*** 0001d3	83 c4 08 		add	sp,8
+;|***   if ((out_regs.W.flags & 0x0001) != 0) {
+; Line 143
+	*** 0001d6	f6 46 e6 01 		test	BYTE PTR [bp-26],1
+	*** 0001da	75 03 			jne	$JCC474
+	*** 0001dc	e9 06 00 		jmp	$I211
+					$JCC474:
+;|***      return(-1);
+; Line 144
+	*** 0001df	b8 ff ff 		mov	ax,-1
+	*** 0001e2	e9 06 00 		jmp	$EX208
+;|***      }
+; Line 145
+;|***   return(0);
+; Line 146
+					$I211:
+	*** 0001e5	b8 00 00 		mov	ax,0
+	*** 0001e8	e9 00 00 		jmp	$EX208
+;|*** 
+;|*** }
+; Line 148
+					$EX208:
+	*** 0001eb	5e 			pop	si
+	*** 0001ec	5f 			pop	di
+	*** 0001ed	8b e5 			mov	sp,bp
+	*** 0001ef	5d 			pop	bp
+	*** 0001f0	cb 			ret	
+
+_verify_acc	ENDP
+MAINSEG	ENDS
+END

@@ -1,0 +1,671 @@
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 20:24:19
+GENERIC Device Driver devhlp interface                      Page     1-1
+
+
+				              PAGE      60,131
+				              TITLE     GENERIC Device Driver devhlp interface
+				;
+				;ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+				;³                                                                           ³
+				;³ GENERIC Device Driver DEVHLP Interface                                    ³
+				;³                                                                           ³
+				;³ _dev_help  - calls OS/2 DevHlp function by doing a far call to the value  ³
+				;³              stored in dev_hlpCS.  This is the one to use generally.      ³
+				;³              The general operation is to copy all the parameters passed   ³
+				;³              in the input structure by the caller onto the stack and      ³
+				;³              then pop them into the registers.  Then, dev_hlp is called   ³
+				;³              by referring to the one in our CODE segment.  This lets us   ³
+				;³              use DS and ES to hold all sorts of values.  After we         ³
+				;³              (hopefully) get back from dev_hlp, we store the register and ³
+				;³              flag values in the output structure and return to the caller ³
+				;³                                                                           ³
+				;³ _dev_help1 - Same as above, except it uses the value of del_hlp stored in ³
+				;³              our data segment and points to it with ES.  This one is      ³
+				;³              intended to be used only until dev_hlpCS has the right value,³
+				;³              very soon after INIT starts.  It is used by those functions  ³
+				;³              to get the right value in dev_hlpCS.  It is in a segment that³
+				;³              is discarded after INIT is done, so it is not accessable by  ³
+				;³              other functions.                                             ³
+				;³                                                                           ³
+				;ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+				;
+				              .386P                        ;    Must use 286 mode if OS/2
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 20:24:19
+GENERIC Device Driver devhlp interface                      Page     1-2
+
+
+				              PAGE
+				;ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+				;³                  STRUCTURE DEFINITIONS                                    ³
+				;ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+				;
+				regs          struc
+ 0000  0000			r_ax          dw        ?                  ; AX
+ 0002  0000			r_bx          dw        ?                  ; BX
+ 0004  0000			r_cx          dw        ?                  ; CX
+ 0006  0000			r_dx          dw        ?                  ; DX
+ 0008  0000			r_si          dw        ?                  ; SI
+ 000A  0000			r_di          dw        ?                  ; DI
+ 000C  0000			r_es          dw        ?                  ; ES
+ 000E  0000			r_ds          dw        ?                  ; DS
+ 0010  0000			r_cs          dw        ?                  ; CS
+ 0012  0000			r_flags       dw        ?                  ; FLAGS
+ 0014  00			r_es_valid    db        ?                  ; Indicator if ES is valid
+ 0015  00			r_ds_valid    db        ?                  ; Indicator if DS is valid
+ 0016				regs          ends
+				;
+				eregs          struc
+ 0000  00000000			r_eax          dd        ?                  ; EAX
+ 0004  00000000			r_ebx          dd        ?                  ; EBX
+ 0008  00000000			r_ecx          dd        ?                  ; ECX
+ 000C  00000000			r_edx          dd        ?                  ; EDX
+ 0010  00000000			r_esi          dd        ?                  ; ESI
+ 0014  00000000			r_edi          dd        ?                  ; EDI
+ 0018  0000			r_ees          dw        ?                  ; ES
+ 001A  0000			r_eds          dw        ?                  ; DS
+ 001C  0000			r_ecs          dw        ?                  ; CS
+ 001E  00000000			r_eflags       dd        ?                  ; EFLAGS
+ 0022  00			r_ees_valid    db        ?                  ; Indicator if ES is valid
+ 0023  00			r_eds_valid    db        ?                  ; Indicator if DS is valid
+ 0024				eregs          ends
+				;
+				;ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+				;³                  CONSTANT DEFINITIONS                                     ³
+				;ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+				;
+ = 0001				TRUE          equ       1      ; Boolean values
+ = 0000				FALSE         equ       0
+				;
+				;
+ 0000				NULL          SEGMENT   WORD PUBLIC 'BEGDATA' USE16
+				              extrn _devhlp:dword
+ 0000				NULL          ENDS
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 20:24:19
+GENERIC Device Driver devhlp interface                      Page     1-3
+
+
+				              PAGE
+				;
+				;ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+				;³                  CODE SEGMENT                                             ³
+				;ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+				;
+ 0000				MAINSEG       SEGMENT   WORD PUBLIC 'CODE' USE16
+				;
+				              ASSUME    CS:MAINSEG
+				              public    _dev_help
+				              public    _dev_help32
+				              public    _dev_hlpCS
+				;
+				;ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+				;³                                                                           ³
+				;³  dev_help    - function to call OS/2 DevHlp facility.                     ³
+				;³                                                                           ³
+				;³  struct regs {                                                            ³
+				;³         unsigned AX,BX,CX,DX,SI,DI,ES,flags;                              ³
+				;³         boolean es_valid;                                                 ³
+				;³         boolean ds_valid;                                                 ³
+				;³         }                                                                 ³
+				;³                                                                           ³
+				;³  Syntax - unsigned dev_helper(far ptr *in_regs, far ptr *out_regs);       ³
+				;³                                                                           ³
+				;ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+				;
+ 0000  00000000			_dev_hlpCS    dd        0
+ 0004				_dev_help     proc      far
+				;
+				; Point to current frame
+				; This gets BP pointing generally at the parameters passed to us by the caller
+				;
+ 0004  55			              push      bp
+ 0005  8B EC			              mov       bp,sp
+				;
+				; Save entry regs - we are gonna step on them hard
+				;
+ 0007  50			              push      ax
+ 0008  53			              push      bx
+ 0009  51			              push      cx
+ 000A  52			              push      dx
+ 000B  56			              push      si
+ 000C  57			              push      di
+ 000D  06			              push      es
+ 000E  9C			              pushf
+ 000F  1E			              push      ds
+				;
+				; Load stack with values to go into registers
+				;
+				; First one is DS.  If the ds_valid flag in the in_regs struc passed by the
+				; caller is TRUE, use the value in the in_regs struc.  If it is FALSE, use
+				; the current value of DS.
+				;
+ 0010  C4 5E 06			              les       bx,[bp+6]
+ 0013  26: 80 7F 15 01		              cmp       es:[bx].r_ds_valid,TRUE
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 20:24:19
+GENERIC Device Driver devhlp interface                      Page     1-4
+
+
+ 0018  0F 85 0024 R		              jnz       devh1001
+ 001C  26: 8B 47 0E		              mov       ax,es:[bx].r_ds
+ 0020  50			              push      ax
+ 0021  EB 02 90			              jmp       devh2001
+ 0024				devh1001:
+ 0024  1E			              push      ds
+				;
+ 0025				devh2001:
+				;
+				; Next is ES.  Same bit of logic with the es_valid flag, use the struc value
+				; if es_valid is TRUE, otherwise, use the value in the ES register.
+				;
+ 0025  C4 5E 06			              les       bx,[bp+6]
+ 0028  26: 80 7F 14 01		              cmp       es:[bx].r_es_valid,TRUE
+ 002D  0F 85 0039 R		              jnz       devh3001
+ 0031  26: 8B 47 0C		              mov       ax,es:[bx].r_es
+ 0035  50			              push      ax
+ 0036  EB 02 90			              jmp       devh4001
+ 0039				devh3001:
+ 0039  06			              push      es
+				;
+ 003A				devh4001:
+				;
+				; Now for the rest of the registers.  They are removed from the struc and
+				; pushed onto the stack in the following order: AX, BX, CX, DX, SI, and DI
+				;
+ 003A  26: 8B 07		              mov       ax,es:[bx].r_ax
+ 003D  50			              push      ax
+ 003E  26: 8B 47 02		              mov       ax,es:[bx].r_bx
+ 0042  50			              push      ax
+ 0043  26: 8B 47 04		              mov       ax,es:[bx].r_cx
+ 0047  50			              push      ax
+ 0048  26: 8B 47 06		              mov       ax,es:[bx].r_dx
+ 004C  50			              push      ax
+ 004D  26: 8B 47 08		              mov       ax,es:[bx].r_si
+ 0051  50			              push      ax
+ 0052  26: 8B 47 0A		              mov       ax,es:[bx].r_di
+ 0056  50			              push      ax
+				;
+				; Now pop the values off the stack and into the proper registers
+				;
+ 0057  5F			              pop       di
+ 0058  5E			              pop       si
+ 0059  5A			              pop       dx
+ 005A  59			              pop       cx
+ 005B  5B			              pop       bx
+ 005C  58			              pop       ax
+ 005D  07			              pop       es
+ 005E  1F			              pop       ds
+				;
+				; call OS/2 DevHlp
+				;
+ 005F  2E: FF 1E 0000 R		              call      cs:_dev_hlpCS
+				;
+				; Save return values in output structure.  The first thing to do is to save
+				; DS and BX because that is what we are going to use to point to the struc.
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 20:24:19
+GENERIC Device Driver devhlp interface                      Page     1-5
+
+
+				; We save the flags too, 'cause we don't want 'em touched by these operations.
+				;
+ 0064  1E			              push      ds
+ 0065  9C			              pushf
+ 0066  53			              push      bx
+				;
+				; Now, load DS:BX to point to the output struc given to us by the caller.
+				;
+ 0067  C5 5E 0A			              lds       bx,[bp+10]
+				;
+				; Store AX into the return struc
+				;
+ 006A  89 07			              mov       [bx].r_ax,ax
+				;
+				; Next, is BX (use the value in the stack)
+				;
+ 006C  58			              pop       ax
+ 006D  89 47 02			              mov       [bx].r_bx,ax
+				;
+				; Then the flags, also on the stack
+				;
+ 0070  58			              pop       ax
+ 0071  89 47 12			              mov       [bx].r_flags,ax
+				;
+				; and DS from the stack.
+				;
+ 0074  58			              pop       ax
+ 0075  89 47 0E			              mov       [bx].r_ds,ax
+				;
+				; ES. But we need to move it to a general register, as we cannot move ES to
+				; memory directly (the CPU won't do it).  So, we push ES onto the stack and
+				; pop it into AX, then move AX to the struc.
+				;
+ 0078  06			              push      es
+ 0079  58			              pop       ax
+ 007A  89 47 0C			              mov       [bx].r_es,ax
+				;
+				; Now the rest of the registers.  We can move them straight from the register
+				; to the struc as we have not touched them since we returned from DevHlp.
+				;
+ 007D  89 4F 04			              mov       [bx].r_cx,cx
+ 0080  89 57 06			              mov       [bx].r_dx,dx
+ 0083  89 7F 0A			              mov       [bx].r_di,di
+ 0086  89 77 08			              mov       [bx].r_si,si
+				;
+				; And finally, set both es_valid and ds_valid to TRUE ('cause they are, silly)
+				;
+ 0089  C6 47 14 01		              mov       [bx].r_es_valid,TRUE
+ 008D  C6 47 15 01		              mov       [bx].r_ds_valid,TRUE
+				;
+				; Restore entry regs
+				;
+ 0091  1F			              pop       ds
+ 0092  9D			              popf
+ 0093  07			              pop       es
+ 0094  5F			              pop       di
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 20:24:19
+GENERIC Device Driver devhlp interface                      Page     1-6
+
+
+ 0095  5E			              pop       si
+ 0096  5A			              pop       dx
+ 0097  59			              pop       cx
+ 0098  5B			              pop       bx
+ 0099  58			              pop       ax
+				;
+				; Return to caller
+				;
+ 009A  5D			              pop       bp
+ 009B  CB			              ret
+				;
+ 009C				_dev_help     endp
+				;
+ 009C				_dev_help32   proc      far
+				;
+				; Point to current frame
+				; This gets BP pointing generally at the parameters passed to us by the caller
+				;
+ 009C  55			              push      bp
+ 009D  8B EC			              mov       bp,sp
+				;
+				; Save entry regs - we are gonna step on them hard
+				;
+ 009F  66| 50			              push      eax
+ 00A1  66| 53			              push      ebx
+ 00A3  66| 51			              push      ecx
+ 00A5  66| 52			              push      edx
+ 00A7  66| 56			              push      esi
+ 00A9  66| 57			              push      edi
+ 00AB  06			              push      es
+ 00AC  9C			              pushf
+ 00AD  1E			              push      ds
+				;
+				; Load stack with values to go into registers
+				;
+				; First one is DS.  If the ds_valid flag in the in_regs struc passed by the
+				; caller is TRUE, use the value in the in_regs struc.  If it is FALSE, use
+				; the current value of DS.
+				;
+ 00AE  C4 5E 06			              les       bx,[bp+6]
+ 00B1  26: 80 7F 23 01		              cmp       es:[bx].r_eds_valid,TRUE
+ 00B6  0F 85 00C2 R		              jnz       de321001
+ 00BA  26: 8B 47 1A		              mov       ax,es:[bx].r_eds
+ 00BE  50			              push      ax
+ 00BF  EB 02 90			              jmp       de322001
+ 00C2				de321001:
+ 00C2  1E			              push      ds
+				;
+ 00C3				de322001:
+				;
+				; Next is ES.  Same bit of logic with the es_valid flag, use the struc value
+				; if es_valid is TRUE, otherwise, use the value in the ES register.
+				;
+ 00C3  C4 5E 06			              les       bx,[bp+6]
+ 00C6  26: 80 7F 22 01		              cmp       es:[bx].r_ees_valid,TRUE
+ 00CB  0F 85 00D7 R		              jnz       de323001
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 20:24:19
+GENERIC Device Driver devhlp interface                      Page     1-7
+
+
+ 00CF  26: 8B 47 18		              mov       ax,es:[bx].r_ees
+ 00D3  50			              push      ax
+ 00D4  EB 02 90			              jmp       de324001
+ 00D7				de323001:
+ 00D7  06			              push      es
+				;
+ 00D8				de324001:
+				;
+				; Now for the rest of the registers.  They are removed from the struc and
+				; pushed onto the stack in the following order: AX, BX, CX, DX, SI, and DI
+				;
+ 00D8  26: 66| 8B 07		              mov       eax,es:[bx].r_eax
+ 00DC  66| 50			              push      eax
+ 00DE  26: 66| 8B 47 04		              mov       eax,es:[bx].r_ebx
+ 00E3  66| 50			              push      eax
+ 00E5  26: 66| 8B 47 08		              mov       eax,es:[bx].r_ecx
+ 00EA  66| 50			              push      eax
+ 00EC  26: 66| 8B 47 0C		              mov       eax,es:[bx].r_edx
+ 00F1  66| 50			              push      eax
+ 00F3  26: 66| 8B 47 10		              mov       eax,es:[bx].r_esi
+ 00F8  66| 50			              push      eax
+ 00FA  26: 66| 8B 47 14		              mov       eax,es:[bx].r_edi
+ 00FF  66| 50			              push      eax
+				;
+				; Now pop the values off the stack and into the proper registers
+				;
+ 0101  66| 5F			              pop       edi
+ 0103  66| 5E			              pop       esi
+ 0105  66| 5A			              pop       edx
+ 0107  66| 59			              pop       ecx
+ 0109  66| 5B			              pop       ebx
+ 010B  66| 58			              pop       eax
+ 010D  07			              pop       es
+ 010E  1F			              pop       ds
+				;
+				; call OS/2 DevHlp
+				;
+ 010F  2E: FF 1E 0000 R		              call      cs:_dev_hlpCS
+				;
+				; Save return values in output structure.  The first thing to do is to save
+				; DS and BX because that is what we are going to use to point to the struc.
+				; We save the flags too, 'cause we don't want 'em touched by these operations.
+				;
+ 0114  1E			              push      ds
+ 0115  66| 9C			              pushfd
+ 0117  66| 53			              push      ebx
+				;
+				; Now, load DS:BX to point to the output struc given to us by the caller.
+				;
+ 0119  C5 5E 0A			              lds       bx,[bp+10]
+				;
+				; Store AX into the return struc
+				;
+ 011C  66| 89 07		              mov       [bx].r_eax,eax
+				;
+				; Next, is BX (use the value in the stack)
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 20:24:19
+GENERIC Device Driver devhlp interface                      Page     1-8
+
+
+				;
+ 011F  66| 58			              pop       eax
+ 0121  66| 89 47 04		              mov       [bx].r_ebx,eax
+				;
+				; Then the flags, also on the stack
+				;
+ 0125  66| 58			              pop       eax
+ 0127  66| 89 47 1E		              mov       [bx].r_eflags,eax
+				;
+				; and DS from the stack.
+				;
+ 012B  58			              pop       ax
+ 012C  89 47 1A			              mov       [bx].r_eds,ax
+				;
+				; ES. But we need to move it to a general register, as we cannot move ES to
+				; memory directly (the CPU won't do it).  So, we push ES onto the stack and
+				; pop it into AX, then move AX to the struc.
+				;
+ 012F  06			              push      es
+ 0130  58			              pop       ax
+ 0131  89 47 18			              mov       [bx].r_ees,ax
+				;
+				; Now the rest of the registers.  We can move them straight from the register
+				; to the struc as we have not touched them since we returned from DevHlp.
+				;
+ 0134  66| 89 4F 08		              mov       [bx].r_ecx,ecx
+ 0138  66| 89 57 0C		              mov       [bx].r_edx,edx
+ 013C  66| 89 7F 14		              mov       [bx].r_edi,edi
+ 0140  66| 89 77 10		              mov       [bx].r_esi,esi
+				;
+				; And finally, set both es_valid and ds_valid to TRUE cause they are silly
+				;
+ 0144  C6 47 22 01		              mov       [bx].r_ees_valid,TRUE
+ 0148  C6 47 23 01		              mov       [bx].r_eds_valid,TRUE
+				;
+				; Restore entry regs
+				;
+ 014C  1F			              pop       ds
+ 014D  9D			              popf
+ 014E  07			              pop       es
+ 014F  66| 5F			              pop       edi
+ 0151  66| 5E			              pop       esi
+ 0153  66| 5A			              pop       edx
+ 0155  66| 59			              pop       ecx
+ 0157  66| 5B			              pop       ebx
+ 0159  66| 58			              pop       eax
+				;
+				; Return to caller
+				;
+ 015B  5D			              pop       bp
+ 015C  CB			              ret
+				;
+ 015D				_dev_help32   endp
+ 015D				MAINSEG       ENDS
+				;
+ 0000				INITSEG       SEGMENT   WORD PUBLIC 'CODE' USE16
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 20:24:19
+GENERIC Device Driver devhlp interface                      Page     1-9
+
+
+				;
+				              ASSUME    CS:INITSEG
+				              public    _dev_help1
+				;
+				;ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+				;³                                                                           ³
+				;³  dev_help1   - function to call OS/2 DevHlp facility.                     ³
+				;³                                                                           ³
+				;³  struct regs {                                                            ³
+				;³         unsigned AX,BX,CX,DX,SI,DI,ES,flags;                              ³
+				;³         boolean es_valid;                                                 ³
+				;³         boolean ds_valid;                                                 ³
+				;³         }                                                                 ³
+				;³                                                                           ³
+				;³  Syntax - unsigned dev_helper(far ptr *in_regs, far ptr *out_regs);       ³
+				;³                                                                           ³
+				;³  This one is used at init time until dev_hlpCS is initialized.  After     ³
+				;³  INIT, this one is gone as it is in a segment that is discarded after     ³
+				;³  initialization is finished.                                              ³
+				;³                                                                           ³
+				;ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+				;
+ 0000				_dev_help1    proc      far
+				;
+				; Point to current frame
+				;
+ 0000  55			              push      bp
+ 0001  8B EC			              mov       bp,sp
+				;
+				; Save entry regs
+				;
+ 0003  50			              push      ax
+ 0004  53			              push      bx
+ 0005  51			              push      cx
+ 0006  52			              push      dx
+ 0007  56			              push      si
+ 0008  57			              push      di
+ 0009  06			              push      es
+ 000A  9C			              pushf
+ 000B  1E			              push      ds
+ 000C  1E			              push      ds
+				;
+				; Load stack with values to go into registers
+				;
+ 000D  C4 5E 06			              les       bx,[bp+6]
+ 0010  26: 80 7F 15 01		              cmp       es:[bx].r_ds_valid,TRUE
+ 0015  0F 85 0021 R		              jnz       devh1000
+ 0019  26: 8B 47 0E		              mov       ax,es:[bx].r_ds
+ 001D  50			              push      ax
+ 001E  EB 02 90			              jmp       devh2000
+ 0021				devh1000:
+ 0021  1E			              push      ds
+				;
+ 0022				devh2000:
+				;
+ 0022  26: 8B 07		              mov       ax,es:[bx].r_ax
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 20:24:19
+GENERIC Device Driver devhlp interface                      Page     1-10
+
+
+ 0025  50			              push      ax
+ 0026  26: 8B 47 02		              mov       ax,es:[bx].r_bx
+ 002A  50			              push      ax
+ 002B  26: 8B 47 04		              mov       ax,es:[bx].r_cx
+ 002F  50			              push      ax
+ 0030  26: 8B 47 06		              mov       ax,es:[bx].r_dx
+ 0034  50			              push      ax
+ 0035  26: 8B 47 08		              mov       ax,es:[bx].r_si
+ 0039  50			              push      ax
+ 003A  26: 8B 47 0A		              mov       ax,es:[bx].r_di
+ 003E  50			              push      ax
+				;
+				; load registers from the stack
+				;
+ 003F  5F			              pop       di
+ 0040  5E			              pop       si
+ 0041  5A			              pop       dx
+ 0042  59			              pop       cx
+ 0043  5B			              pop       bx
+ 0044  58			              pop       ax
+ 0045  1F			              pop       ds
+ 0046  07			              pop       es
+				;
+				; call OS/2 DevHlp
+				;
+ 0047  26: FF 1E 0000 E		              call      es:_devhlp
+				;
+				; Save return values in output structure
+				;
+ 004C  1E			              push      ds
+ 004D  9C			              pushf
+ 004E  53			              push      bx
+ 004F  C5 5E 0A			              lds       bx,[bp+10]
+ 0052  89 07			              mov       [bx].r_ax,ax
+ 0054  58			              pop       ax
+ 0055  89 47 02			              mov       [bx].r_bx,ax
+ 0058  58			              pop       ax
+ 0059  89 47 12			              mov       [bx].r_flags,ax
+ 005C  58			              pop       ax
+ 005D  89 47 0E			              mov       [bx].r_ds,ax
+ 0060  06			              push      es
+ 0061  58			              pop       ax
+ 0062  89 47 0C			              mov       [bx].r_es,ax
+ 0065  89 4F 04			              mov       [bx].r_cx,cx
+ 0068  89 57 06			              mov       [bx].r_dx,dx
+ 006B  89 7F 0A			              mov       [bx].r_di,di
+ 006E  89 77 08			              mov       [bx].r_si,si
+ 0071  C6 47 14 01		              mov       [bx].r_es_valid,TRUE
+ 0075  C6 47 15 01		              mov       [bx].r_ds_valid,TRUE
+				;
+				; Restore entry regs
+				;
+ 0079  1F			              pop       ds
+ 007A  9D			              popf
+ 007B  07			              pop       es
+ 007C  5F			              pop       di
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 20:24:19
+GENERIC Device Driver devhlp interface                      Page     1-11
+
+
+ 007D  5E			              pop       si
+ 007E  5A			              pop       dx
+ 007F  59			              pop       cx
+ 0080  5B			              pop       bx
+ 0081  58			              pop       ax
+				;
+				; Return to caller
+				;
+ 0082  5D			              pop       bp
+ 0083  CB			              ret
+				;
+ 0084				_dev_help1    endp
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 20:24:19
+GENERIC Device Driver devhlp interface                      Page     1-12
+
+
+				              PAGE
+ 0084				INITSEG       ENDS
+				;
+				              END
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 20:24:19
+GENERIC Device Driver devhlp interface                      Symbols-1
+
+
+Structures and Records:
+
+                N a m e                 Width   # fields
+                                        Shift   Width   Mask    Initial
+
+EREGS  . . . . . . . . . . . . .  	0024	000C
+  R_EAX  . . . . . . . . . . . .  	0000
+  R_EBX  . . . . . . . . . . . .  	0004
+  R_ECX  . . . . . . . . . . . .  	0008
+  R_EDX  . . . . . . . . . . . .  	000C
+  R_ESI  . . . . . . . . . . . .  	0010
+  R_EDI  . . . . . . . . . . . .  	0014
+  R_EES  . . . . . . . . . . . .  	0018
+  R_EDS  . . . . . . . . . . . .  	001A
+  R_ECS  . . . . . . . . . . . .  	001C
+  R_EFLAGS . . . . . . . . . . .  	001E
+  R_EES_VALID  . . . . . . . . .  	0022
+  R_EDS_VALID  . . . . . . . . .  	0023
+REGS . . . . . . . . . . . . . .  	0016	000C
+  R_AX . . . . . . . . . . . . .  	0000
+  R_BX . . . . . . . . . . . . .  	0002
+  R_CX . . . . . . . . . . . . .  	0004
+  R_DX . . . . . . . . . . . . .  	0006
+  R_SI . . . . . . . . . . . . .  	0008
+  R_DI . . . . . . . . . . . . .  	000A
+  R_ES . . . . . . . . . . . . .  	000C
+  R_DS . . . . . . . . . . . . .  	000E
+  R_CS . . . . . . . . . . . . .  	0010
+  R_FLAGS  . . . . . . . . . . .  	0012
+  R_ES_VALID . . . . . . . . . .  	0014
+  R_DS_VALID . . . . . . . . . .  	0015
+
+Segments and Groups:
+
+                N a m e         	Size	Length	 Align	Combine Class
+
+INITSEG  . . . . . . . . . . . .  	16 Bit	0084	WORD	PUBLIC	'CODE'
+MAINSEG  . . . . . . . . . . . .  	16 Bit	015D	WORD	PUBLIC	'CODE'
+NULL . . . . . . . . . . . . . .  	16 Bit	0000	WORD	PUBLIC	'BEGDATA'
+
+Symbols:            
+
+                N a m e         	Type	 Value	 Attr
+
+DE321001 . . . . . . . . . . . .  	L NEAR	00C2	MAINSEG
+DE322001 . . . . . . . . . . . .  	L NEAR	00C3	MAINSEG
+DE323001 . . . . . . . . . . . .  	L NEAR	00D7	MAINSEG
+DE324001 . . . . . . . . . . . .  	L NEAR	00D8	MAINSEG
+DEVH1000 . . . . . . . . . . . .  	L NEAR	0021	INITSEG
+DEVH1001 . . . . . . . . . . . .  	L NEAR	0024	MAINSEG
+DEVH2000 . . . . . . . . . . . .  	L NEAR	0022	INITSEG
+DEVH2001 . . . . . . . . . . . .  	L NEAR	0025	MAINSEG
+DEVH3001 . . . . . . . . . . . .  	L NEAR	0039	MAINSEG
+DEVH4001 . . . . . . . . . . . .  	L NEAR	003A	MAINSEG
+
+FALSE  . . . . . . . . . . . . .  	NUMBER	0000	
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 20:24:19
+GENERIC Device Driver devhlp interface                      Symbols-2
+
+
+
+TRUE . . . . . . . . . . . . . .  	NUMBER	0001	
+
+@CPU . . . . . . . . . . . . . .  	TEXT  3471		
+@FILENAME  . . . . . . . . . . .  	TEXT  devhlp		
+@VERSION . . . . . . . . . . . .  	TEXT  510		
+_DEVHLP  . . . . . . . . . . . .  	V DWORD	0000	NULL	External
+_DEV_HELP  . . . . . . . . . . .  	F PROC	0004	MAINSEG	Global	Length = 0098
+_DEV_HELP1 . . . . . . . . . . .  	F PROC	0000	INITSEG	Global	Length = 0084
+_DEV_HELP32  . . . . . . . . . .  	F PROC	009C	MAINSEG	Global	Length = 00C1
+_DEV_HLPCS . . . . . . . . . . .  	L DWORD	0000	MAINSEG	Global
+
+
+    538 Source  Lines
+    538 Total   Lines
+     53 Symbols
+
+  46364 Bytes symbol space free
+
+      0 Warning Errors
+      0 Severe  Errors

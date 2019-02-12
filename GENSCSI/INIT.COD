@@ -1,0 +1,283 @@
+;	Static Name Aliases
+;
+	TITLE   .\src\init.c
+	.8087
+INCLUDELIB	LLIBCE
+MAINSEG	SEGMENT  WORD PUBLIC 'CODE'
+MAINSEG	ENDS
+_DATA	SEGMENT  WORD PUBLIC 'DATA'
+_DATA	ENDS
+CONST	SEGMENT  WORD PUBLIC 'CONST'
+CONST	ENDS
+_BSS	SEGMENT  WORD PUBLIC 'BSS'
+_BSS	ENDS
+DGROUP	GROUP	CONST, _BSS, _DATA
+	ASSUME DS: DGROUP
+	ASSUME  SS: NOTHING
+PUBLIC  _initialized
+EXTRN	_prt_msg:FAR
+EXTRN	_make_msg_fname:FAR
+EXTRN	_phys_to_ldt1:FAR
+EXTRN	_get_phys_addr1:FAR
+EXTRN	_free_virt:FAR
+EXTRN	_scsi_init:FAR
+EXTRN	_open_init:FAR
+EXTRN	_dev_hlpCS:FAR
+EXTRN	_last_c:WORD
+EXTRN	_devhlp:DWORD
+EXTRN	_last_d:WORD
+_DATA      SEGMENT
+_initialized	DW	00H
+_DATA      ENDS
+MAINSEG      SEGMENT
+	ASSUME	CS: MAINSEG
+;|*** /*****************************************************************************/
+; Line 1
+;|*** /* init_mod(req_pkt)                                                         */
+;|*** /*                                                                           */
+;|*** /* Called by Strategy, this function executes the INIT command from OS/2.    */
+;|*** /*                                                                           */
+;|*** /* Store devhlp entry point for use later by dev_help                        */
+;|*** /* Display the information about this DD (version, copywrite, etc)           */
+;|*** /* Do whatever initialization your particular DD needs                       */
+;|*** /* Set the endpoints of the default CODE and DATA segments                   */
+;|*** /* At any of these steps, if an error is detected (some steps don't do any   */
+;|*** /* error checking because there is none to do), the INIT ends, and the DD    */
+;|*** /* returns a FAIL error.  In essence, it fails to install.                   */
+;|*** /*                                                                           */
+;|*** /* Finally, it sets up a pointer to Global Information Segment.  This has    */
+;|*** /* the Milliseconds since IPL value and the current PID.  These are useful   */
+;|*** /* things to know.                                                           */
+;|*** /*                                                                           */
+;|*** /* There is a bit of razzle-dazzle in this function.  At the very beginning, */
+;|*** /* the DevHlp entry point must be stored in a place where the DevHlp caller  */
+;|*** /* can get to it.  Due to the nature of DevHlp calls, the caller needs to    */
+;|*** /* have it addressable by CS.  To do this, the entry point must be stored in */
+;|*** /* the CODE segment.  But, the CODE segment is not writable.  Therefore, an  */
+;|*** /* alias selector (Data, Writeable) must be created.  Another problem is     */
+;|*** /* that to do this uses for calls to DevHlp. So, the basic steps are:        */
+;|*** /* 1. Store the DevHlp entry point in a temporary location in the Data Seg   */
+;|*** /* 2. Get the physical address of the DevHlp storage location in the Code    */
+;|*** /*    segment.  This uses the temporary DevHlp caller that uses the DevHlp   */
+;|*** /*    entry point stored in the DATA segment                                 */
+;|*** /* 3. Make an LDT based pointer to the physical address gotten in step 2.    */
+;|*** /*    This two uses the temporary DevHlp caller                              */
+;|*** /* 4. Store the DevHlp entry point in the address gotten in step 3.  From    */
+;|*** /*    this point on, we can use the CS based DevHlp caller.                  */
+;|*** /* 5. Free the LDT selector slot used in steps 2 and 3.                      */
+;|*** /*                                                                           */
+;|*** /* The reason for using CS as the segment pointer to the DevHlp entry point  */
+;|*** /* is that CS is the only segment always available.  Some DevHlp calls use   */
+;|*** /* DS and others use ES, the SS and CS are the only ones left.  I chose to   */
+;|*** /* pay the price at INIT time and store the entry in CS, and not always      */
+;|*** /* pass it in the stack (which, by the way is a perfectly valid way to do    */
+;|*** /* it).                                                                      */
+;|*** /*                                                                           */
+;|*** /*****************************************************************************/
+;|*** 
+;|*** #include <stdlib.h>
+; Line 44
+;|*** #include <string.h>
+; Line 45
+;|*** #include "genscsi.h"
+; Line 46
+;|*** #include "const.h"
+; Line 1
+;|*** #include "struc.h"
+; Line 2
+;|*** #include "externs.h"
+; Line 3
+;|*** 
+;|*** extern unsigned far   last_c;
+;|*** extern _32bits  near  devhlp;
+;|*** extern unsigned far  *dev_hlpCS();
+;|*** extern unsigned near  last_d;
+;|***        boolean  near  initialized = FALSE;
+;|*** 
+;|*** unsigned far init_mod( struct init_hdr_in *req_hdr)
+;|*** {
+; Line 55
+	PUBLIC	_init_mod
+_init_mod	PROC FAR
+	*** 000000	55 			push	bp
+	*** 000001	8b ec 			mov	bp,sp
+	*** 000003	81 ec 12 00 		sub	sp,18
+	*** 000007	57 			push	di
+	*** 000008	56 			push	si
+;	temp = -14
+;	pointer = -8
+;	tempaddr = -4
+;	req_hdr_out = -18
+;	rc = -10
+;	req_hdr = 6
+;|***    _32bits             *temp;
+;|***    _32bits              pointer;
+;|***    _32bits              tempaddr;
+;|***    struct init_hdr_out *req_hdr_out;
+;|***    word                 rc;
+;|*** 
+;|***    /* Store the DevHlp entry point in our DS                             */
+;|***    /* This one is used only for the next section, which gets the devhlp  */
+;|***    /* entry point stored in the DD's CS.  This lets me have 1 devhlper   */
+;|***    /* that does not depend on if DS or ES is holding a pointer.  devhelp */
+;|***    /* will use CS to access the devhlp entry                             */
+;|***    devhlp = req_hdr->pointer1;
+; Line 67
+	*** 000009	c4 5e 06 		les	bx,DWORD PTR [bp+6]	;req_hdr
+	*** 00000c	26 8b 47 0e 		mov	ax,WORD PTR es:[bx+14]
+	*** 000010	26 8b 57 10 		mov	dx,WORD PTR es:[bx+16]
+	*** 000014	a3 00 00 		mov	WORD PTR _devhlp,ax
+	*** 000017	89 16 02 00 		mov	WORD PTR _devhlp+2,dx
+;|*** 
+;|***    /* Store the DevHlp entry point in our CS */
+;|***    /*    Get the phys addr of dev_hlpCS */
+;|***    pointer.fptr = (void far *)dev_hlpCS;
+; Line 71
+	*** 00001b	c7 46 f8 00 00 		mov	WORD PTR [bp-8],OFFSET _dev_hlpCS	;pointer
+	*** 000020	c7 46 fa 00 00 		mov	WORD PTR [bp-6],SEG _dev_hlpCS
+;|***    tempaddr = get_phys_addr1(pointer);
+; Line 72
+	*** 000025	ff 76 fa 		push	WORD PTR [bp-6]
+	*** 000028	ff 76 f8 		push	WORD PTR [bp-8]	;pointer
+	*** 00002b	9a 00 00 00 00 		call	FAR PTR _get_phys_addr1
+	*** 000030	83 c4 04 		add	sp,4
+	*** 000033	89 46 fc 		mov	WORD PTR [bp-4],ax	;tempaddr
+	*** 000036	89 56 fe 		mov	WORD PTR [bp-2],dx
+;|*** 
+;|***    /*    Make an LDT selector point to it */
+;|***    pointer = phys_to_ldt1(tempaddr,32);
+; Line 75
+	*** 000039	b8 20 00 		mov	ax,32
+	*** 00003c	50 			push	ax
+	*** 00003d	ff 76 fe 		push	WORD PTR [bp-2]
+	*** 000040	ff 76 fc 		push	WORD PTR [bp-4]	;tempaddr
+	*** 000043	9a 00 00 00 00 		call	FAR PTR _phys_to_ldt1
+	*** 000048	83 c4 06 		add	sp,6
+	*** 00004b	89 46 f8 		mov	WORD PTR [bp-8],ax	;pointer
+	*** 00004e	89 56 fa 		mov	WORD PTR [bp-6],dx
+;|***    temp = (_32bits *)pointer.fptr;
+; Line 76
+	*** 000051	8b 46 f8 		mov	ax,WORD PTR [bp-8]	;pointer
+	*** 000054	8b 56 fa 		mov	dx,WORD PTR [bp-6]
+	*** 000057	89 46 f2 		mov	WORD PTR [bp-14],ax	;temp
+	*** 00005a	89 56 f4 		mov	WORD PTR [bp-12],dx
+;|*** 
+;|***    /*    Store the devhlp entry point in our CS */
+;|***    temp->_segadr.segment = req_hdr->pointer1._segadr.segment;
+; Line 79
+	*** 00005d	c4 5e 06 		les	bx,DWORD PTR [bp+6]	;req_hdr
+	*** 000060	26 8b 47 10 		mov	ax,WORD PTR es:[bx+16]
+	*** 000064	c4 5e f2 		les	bx,DWORD PTR [bp-14]	;temp
+	*** 000067	26 89 47 02 		mov	WORD PTR es:[bx+2],ax
+;|***    temp->_segadr.offset  = req_hdr->pointer1._segadr.offset;
+; Line 80
+	*** 00006b	c4 5e 06 		les	bx,DWORD PTR [bp+6]	;req_hdr
+	*** 00006e	26 8b 47 0e 		mov	ax,WORD PTR es:[bx+14]
+	*** 000072	c4 5e f2 		les	bx,DWORD PTR [bp-14]	;temp
+	*** 000075	26 89 07 		mov	WORD PTR es:[bx],ax
+;|*** 
+;|***    /*    Free the LDT selector slot used */
+;|***    pointer.phys = (physaddr)temp;
+; Line 83
+	*** 000078	8b 46 f2 		mov	ax,WORD PTR [bp-14]	;temp
+	*** 00007b	8b 56 f4 		mov	dx,WORD PTR [bp-12]
+	*** 00007e	89 46 f8 		mov	WORD PTR [bp-8],ax	;pointer
+	*** 000081	89 56 fa 		mov	WORD PTR [bp-6],dx
+;|***    free_virt(pointer._segadr.segment);
+; Line 84
+	*** 000084	ff 76 fa 		push	WORD PTR [bp-6]
+	*** 000087	9a 00 00 00 00 		call	FAR PTR _free_virt
+	*** 00008c	83 c4 02 		add	sp,2
+;|*** 
+;|***    /* Set the return state to fail, if it passes, we will fix before exit */
+;|***    req_hdr_out = (struct init_hdr_out *)req_hdr;
+; Line 87
+	*** 00008f	8b 46 06 		mov	ax,WORD PTR [bp+6]	;req_hdr
+	*** 000092	8b 56 08 		mov	dx,WORD PTR [bp+8]
+	*** 000095	89 46 ee 		mov	WORD PTR [bp-18],ax	;req_hdr_out
+	*** 000098	89 56 f0 		mov	WORD PTR [bp-16],dx
+;|***    req_hdr_out->code_end = 0;
+; Line 88
+	*** 00009b	c4 5e ee 		les	bx,DWORD PTR [bp-18]	;req_hdr_out
+	*** 00009e	26 c7 47 0e 00 00 	mov	WORD PTR es:[bx+14],0
+;|***    req_hdr_out->data_end = 0;
+; Line 89
+	*** 0000a4	c4 5e ee 		les	bx,DWORD PTR [bp-18]	;req_hdr_out
+	*** 0000a7	26 c7 47 10 00 00 	mov	WORD PTR es:[bx+16],0
+;|***    req_hdr_out->data1 = 0;
+; Line 90
+	*** 0000ad	c4 5e ee 		les	bx,DWORD PTR [bp-18]	;req_hdr_out
+	*** 0000b0	26 c6 47 0d 00 		mov	BYTE PTR es:[bx+13],0
+;|*** 
+;|***    /* Make the message file name */
+;|***    make_msg_fname(req_hdr->pointer2);
+; Line 93
+	*** 0000b5	c4 5e 06 		les	bx,DWORD PTR [bp+6]	;req_hdr
+	*** 0000b8	26 ff 77 14 		push	WORD PTR es:[bx+20]
+	*** 0000bc	26 ff 77 12 		push	WORD PTR es:[bx+18]
+	*** 0000c0	9a 00 00 00 00 		call	FAR PTR _make_msg_fname
+	*** 0000c5	83 c4 04 		add	sp,4
+;|*** 
+;|***    /* Print the loading commercial */
+;|***    prt_msg(1);
+; Line 96
+	*** 0000c8	b8 01 00 		mov	ax,1
+	*** 0000cb	50 			push	ax
+	*** 0000cc	9a 00 00 00 00 		call	FAR PTR _prt_msg
+	*** 0000d1	83 c4 02 		add	sp,2
+;|*** 
+;|***    /* Do your initialisation  */
+;|***    open_init();
+; Line 99
+	*** 0000d4	9a 00 00 00 00 		call	FAR PTR _open_init
+;|***    rc = scsi_init();
+; Line 100
+	*** 0000d9	9a 00 00 00 00 		call	FAR PTR _scsi_init
+	*** 0000de	89 46 f6 		mov	WORD PTR [bp-10],ax	;rc
+;|***    if (rc) return(rc);
+; Line 101
+	*** 0000e1	83 7e f6 00 		cmp	WORD PTR [bp-10],0	;rc
+	*** 0000e5	75 03 			jne	$JCC229
+	*** 0000e7	e9 06 00 		jmp	$I319
+					$JCC229:
+	*** 0000ea	8b 46 f6 		mov	ax,WORD PTR [bp-10]	;rc
+	*** 0000ed	e9 2c 00 		jmp	$EX313
+;|*** 
+;|***    /* Set the Code and Data segment sizes in the request header */
+;|***    pointer.phys = (physaddr)&last_c;
+; Line 104
+					$I319:
+	*** 0000f0	c7 46 f8 00 00 		mov	WORD PTR [bp-8],OFFSET _last_c	;pointer
+	*** 0000f5	c7 46 fa 00 00 		mov	WORD PTR [bp-6],SEG _last_c
+;|***    req_hdr_out->code_end = pointer._segadr.offset;
+; Line 105
+	*** 0000fa	8b 46 f8 		mov	ax,WORD PTR [bp-8]	;pointer
+	*** 0000fd	c4 5e ee 		les	bx,DWORD PTR [bp-18]	;req_hdr_out
+	*** 000100	26 89 47 0e 		mov	WORD PTR es:[bx+14],ax
+;|***    pointer.fptr = (void far *)&last_d;
+; Line 106
+	*** 000104	c7 46 f8 00 00 		mov	WORD PTR [bp-8],OFFSET _last_d	;pointer
+	*** 000109	8c 5e fa 		mov	WORD PTR [bp-6],ds
+;|***    req_hdr_out->data_end = pointer._segadr.offset;
+; Line 107
+	*** 00010c	8b 46 f8 		mov	ax,WORD PTR [bp-8]	;pointer
+	*** 00010f	c4 5e ee 		les	bx,DWORD PTR [bp-18]	;req_hdr_out
+	*** 000112	26 89 47 10 		mov	WORD PTR es:[bx+16],ax
+;|*** 
+;|***    return(DONE);
+; Line 109
+	*** 000116	b8 00 01 		mov	ax,256
+	*** 000119	e9 00 00 		jmp	$EX313
+;|*** 
+;|*** }
+; Line 111
+					$EX313:
+	*** 00011c	5e 			pop	si
+	*** 00011d	5f 			pop	di
+	*** 00011e	8b e5 			mov	sp,bp
+	*** 000120	5d 			pop	bp
+	*** 000121	cb 			ret	
+
+_init_mod	ENDP
+MAINSEG	ENDS
+END

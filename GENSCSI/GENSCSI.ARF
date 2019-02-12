@@ -1,0 +1,7 @@
+.\obj\genscsi+
+/map /Info /NOD /NOP
+genscsi
+.\lst\genscsi.map
+genscsi+llibce+os2
+genscsi.def
+

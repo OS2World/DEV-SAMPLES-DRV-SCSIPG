@@ -1,0 +1,68 @@
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 21:21:48
+GENERIC Device Driver Debug Function                        Page     1-1
+
+
+				              PAGE      60,131 ;
+				              TITLE     GENERIC Device Driver Debug Function
+				;******************************************************************************
+				;This is a very simple function that executes an INT 3, loads AX with 0 and
+				;returns to the caller.  Most debuggers attach to INT 3, so this will cause
+				;the debugger to be activated.  The loading if AX with 0 is setting the return
+				;value to SUCCESS or 0.
+				;******************************************************************************
+				              .386p                         ;    Must use 286 mode if OS/2
+				;
+				;
+ 0000				MAINSEG       SEGMENT   WORD PUBLIC 'CODE' USE16
+				              ASSUME    CS:MAINSEG
+				              public    _breakpoint
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 21:21:48
+GENERIC Device Driver Debug Function                        Page     1-2
+
+
+				              PAGE
+				;
+				;
+ 0000				_breakpoint   proc      far
+				;
+				; breakpoint to debugger
+				;
+ 0000  CC			              int       3
+				;             nop
+				;
+				; Return to OS/2
+				;
+ 0001  B8 0000			              mov       ax,0
+ 0004  CB			              ret
+				;
+ 0005				_breakpoint   endp
+ 0005				MAINSEG       ENDS
+				              END
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 21:21:48
+GENERIC Device Driver Debug Function                        Symbols-1
+
+
+Segments and Groups:
+
+                N a m e         	Size	Length	 Align	Combine Class
+
+MAINSEG  . . . . . . . . . . . .  	16 Bit	0005	WORD	PUBLIC	'CODE'
+
+Symbols:            
+
+                N a m e         	Type	 Value	 Attr
+
+@CPU . . . . . . . . . . . . . .  	TEXT  3471		
+@FILENAME  . . . . . . . . . . .  	TEXT  brkpoint		
+@VERSION . . . . . . . . . . . .  	TEXT  510		
+_BREAKPOINT  . . . . . . . . . .  	F PROC	0000	MAINSEG	Global	Length = 0005
+
+
+     32 Source  Lines
+     32 Total   Lines
+      8 Symbols
+
+  46528 Bytes symbol space free
+
+      0 Warning Errors
+      0 Severe  Errors

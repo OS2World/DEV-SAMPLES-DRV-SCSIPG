@@ -1,0 +1,169 @@
+
+ genscsi
+
+ Start     Length     Name                   Class
+ 0001:0000 0001EH     NULL                   BEGDATA
+ 0001:001E 00016H     _DATA                  DATA
+ 0001:0034 00002H     CONST                  CONST
+ 0001:0036 00000H     FAR_BSS                FAR_BSS
+ 0001:0040 0044CH     FAR_BSS                FAR_BSS
+ 0001:048C 00006H     _BSS                   BSS
+ 0001:04A0 0011AH     c_common               BSS
+ 0001:05BA 00000H     LAST_D                 LAST_DATA
+ 0002:0000 01BD5H     MAINSEG                CODE
+ 0002:1BD6 0018DH     _TEXT                  CODE
+ 0002:1D64 00000H     END_TEXT               CODE
+ 0003:0000 00084H     INITSEG                CODE
+ 0004:0000 00000H     C_ETEXT                ENDCODE
+ 0004:0000 0002CH     _MSGSEG                MSGSEGCODE
+
+ Origin   Group
+ 0002:0   CGROUP
+ 0001:0   DGROUP
+ 0004:0   MESSAGES
+
+  Address         Publics by Name
+
+ 0004:0010       DOSGETMESSAGE
+ 0000:0000  Imp  DOSOPEN              (DOSCALLS.70)
+ 0000:0000  Imp  DOSPUTMESSAGE        (MSG.1)
+ 0000:0000  Imp  DOSREAD              (DOSCALLS.137)
+ 0000:0000  Imp  DOSTRUEGETMESSAGE    (MSG.2)
+ 0001:0000       HEADER
+ 0004:002A       MSGSEGDATA
+ 0002:0094       _alloc_req
+ 0002:08A2       _breakpoint
+ 0002:002F       _CALL_IDC
+ 0002:126B       _call_scsi
+ 0002:0A7F       _close
+ 0002:0D38       _delete_devh
+ 0001:001A       _DEVHLP
+ 0002:0042       _dev_done
+ 0002:0134       _dev_help
+ 0003:0000       _DEV_HELP1
+ 0002:01CC       _DEV_HELP32
+ 0002:0130       _DEV_HLPCS
+ 0002:002D       _DISABLE_IRPT
+ 0002:002B       _ENABLE_IRPT
+ 0002:1ABF       _free_dhand
+ 0002:00F4       _free_req
+ 0002:0480       _free_virt
+ 0001:05B2       _gdt_selector
+ 0002:0BBC       _get_avail_devh
+ 0002:028E       _get_gdt_slots
+ 0002:0355       _get_phys_addr
+ 0002:03BD       _get_phys_addr1
+ 0001:04B0       _handle
+ 0001:04A0       _idc_entry
+ 0001:0024       _initialized
+ 0002:1068       _init_mod
+ 0002:0014       _IN_PORT
+ 0001:001E       _in_unlock
+ 0002:05C0       _ioctl
+ 0002:1C0C       _itoa
+ 0002:1D64       _LAST_C
+ 0001:05BA       _LAST_D
+ 0002:0694       _lin_to_pages
+ 0002:06E8       _lock
+ 0001:0020       _lock_count
+ 0002:0E40       _make_msg_fname
+ 0001:04B2       _msg_file
+ 0002:0935       _open
+ 0001:0040       _open_info
+ 0002:08A8       _open_init
+ 0002:001F       _OUT_PORT
+ 0002:02E2       _phys_to_gdt
+ 0002:054D       _phys_to_ldt
+ 0002:04DB       _phys_to_ldt1
+ 0002:0EDB       _prt_msg
+ 0001:04A4       _scsi_idc
+ 0002:118A       _scsi_init
+ 0001:0026       _scsi_name
+ 0002:0C31       _set_new_devh
+ 0002:0000       _STRATEGY
+ 0002:07C6       _STRATEGY_C
+ 0002:1C28       _strchr
+ 0002:1BD6       _strcpy
+ 0002:1C56       _strtok
+ 0002:158A       _transfer_scb
+ 0002:074E       _unlock
+ 0002:0425       _verify_acc
+ 0002:061A       _virt_to_lin
+ 0002:0008       __CHKSTK
+ 0002:1D00       __cltoasub
+ 0002:1D0D       __cxtoa
+
+  Address         Publics by Value
+
+ 0000:0000  Imp  DOSREAD              (DOSCALLS.137)
+ 0000:0000  Imp  DOSTRUEGETMESSAGE    (MSG.2)
+ 0000:0000  Imp  DOSPUTMESSAGE        (MSG.1)
+ 0000:0000  Imp  DOSOPEN              (DOSCALLS.70)
+ 0001:0000       HEADER
+ 0001:001A       _DEVHLP
+ 0001:001E       _in_unlock
+ 0001:0020       _lock_count
+ 0001:0024       _initialized
+ 0001:0026       _scsi_name
+ 0001:0040       _open_info
+ 0001:04A0       _idc_entry
+ 0001:04A4       _scsi_idc
+ 0001:04B0       _handle
+ 0001:04B2       _msg_file
+ 0001:05B2       _gdt_selector
+ 0001:05BA       _LAST_D
+ 0002:0000       _STRATEGY
+ 0002:0008       __CHKSTK
+ 0002:0014       _IN_PORT
+ 0002:001F       _OUT_PORT
+ 0002:002B       _ENABLE_IRPT
+ 0002:002D       _DISABLE_IRPT
+ 0002:002F       _CALL_IDC
+ 0002:0042       _dev_done
+ 0002:0094       _alloc_req
+ 0002:00F4       _free_req
+ 0002:0130       _DEV_HLPCS
+ 0002:0134       _dev_help
+ 0002:01CC       _DEV_HELP32
+ 0002:028E       _get_gdt_slots
+ 0002:02E2       _phys_to_gdt
+ 0002:0355       _get_phys_addr
+ 0002:03BD       _get_phys_addr1
+ 0002:0425       _verify_acc
+ 0002:0480       _free_virt
+ 0002:04DB       _phys_to_ldt1
+ 0002:054D       _phys_to_ldt
+ 0002:05C0       _ioctl
+ 0002:061A       _virt_to_lin
+ 0002:0694       _lin_to_pages
+ 0002:06E8       _lock
+ 0002:074E       _unlock
+ 0002:07C6       _STRATEGY_C
+ 0002:08A2       _breakpoint
+ 0002:08A8       _open_init
+ 0002:0935       _open
+ 0002:0A7F       _close
+ 0002:0BBC       _get_avail_devh
+ 0002:0C31       _set_new_devh
+ 0002:0D38       _delete_devh
+ 0002:0E40       _make_msg_fname
+ 0002:0EDB       _prt_msg
+ 0002:1068       _init_mod
+ 0002:118A       _scsi_init
+ 0002:126B       _call_scsi
+ 0002:158A       _transfer_scb
+ 0002:1ABF       _free_dhand
+ 0002:1BD6       _strcpy
+ 0002:1C0C       _itoa
+ 0002:1C28       _strchr
+ 0002:1C56       _strtok
+ 0002:1D00       __cltoasub
+ 0002:1D0D       __cxtoa
+ 0002:1D64       _LAST_C
+ 0003:0000       _DEV_HELP1
+ 0004:0010       DOSGETMESSAGE
+ 0004:002A       MSGSEGDATA
+
+Segments              14
+Groups                3
+Bytes in symbol table  6592

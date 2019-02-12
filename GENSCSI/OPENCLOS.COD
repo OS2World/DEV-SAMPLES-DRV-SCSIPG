@@ -1,0 +1,1146 @@
+;	Static Name Aliases
+;
+	TITLE   .\src\openclos.c
+	.8087
+INCLUDELIB	LLIBCE
+MAINSEG	SEGMENT  WORD PUBLIC 'CODE'
+MAINSEG	ENDS
+_DATA	SEGMENT  WORD PUBLIC 'DATA'
+_DATA	ENDS
+CONST	SEGMENT  WORD PUBLIC 'CONST'
+CONST	ENDS
+_BSS	SEGMENT  WORD PUBLIC 'BSS'
+_BSS	ENDS
+DGROUP	GROUP	CONST, _BSS, _DATA
+	ASSUME DS: DGROUP
+	ASSUME  SS: NOTHING
+EXTRN	_free_dhand:FAR
+_BSS      SEGMENT
+COMM NEAR	_open_info:	 22:	 50
+_BSS      ENDS
+MAINSEG      SEGMENT
+	ASSUME	CS: MAINSEG
+;|*** /****************************************************************************/
+; Line 1
+;|*** /* Routines for processing the Open and Close commands from OS/2            */
+;|*** /****************************************************************************/
+;|*** /*                                                                          */
+;|*** /* We keep a record of all the device handles given by OS2SCSI and what     */
+;|*** /* file handle (from OPEN) is the owner of each device handle.  The reason  */
+;|*** /* for this is if an application ends without doing a Deallocate after it   */
+;|*** /* has done an Allocate, we need to do the Deallocate ourself.  This way,   */
+;|*** /* when another application wants to use the device, it will be available.  */
+;|*** /*                                                                          */
+;|*** /* There are a couple of things to watch out for, here.  The first is that  */
+;|*** /* a single file handle is allowed to allocate up to 8 devices.  This is    */
+;|*** /* an arbitrary number set by the MAX_DHANDS define.  The second is that    */
+;|*** /* can get multiple opens by a single handle.  If a program spawns a child  */
+;|*** /* process with inheritance and it has an outstanding OPEN to your DD, you  */
+;|*** /* will see a second OPEN with the same file handle.  It is up to you to    */
+;|*** /* keep track of the OPENS and CLOSES and only release the reserved         */
+;|*** /* resources when the open count on a given handle reaches zero.  That is   */
+;|*** /* why there is an open_count field in the handle information array.        */
+;|*** /*                                                                          */
+;|*** /* Finally, we have an arbitrary limit of 50 different file handles.  If    */
+;|*** /* more than 50 different processes do an open to us, we will fail the 51st */
+;|*** /* because we have no place to store the information.  This value is set    */
+;|*** /* by the MAX_OPENS define.                                                 */
+;|*** /*                                                                          */
+;|*** /****************************************************************************/
+;|*** /*                                                                          */
+;|*** /* open_init() initializes the array of file handles/Device handles to      */
+;|*** /* empty.  It is called at INIT time.                                       */
+;|*** /*                                                                          */
+;|*** /****************************************************************************/
+;|*** /*                                                                          */
+;|*** /* open() processes the OPEN command from OS/2.  It searches the array for  */
+;|*** /* a matching file handle.  If it finds one, it increments the open_count   */
+;|*** /* field for that array element and exits, returning a successful return    */
+;|*** /* code to the caller.  If it can't find a matching file handle (this is    */
+;|*** /* the first OPEN to our DD by this process), it searches for an empty slot */
+;|*** /* in the array.  If it finds an empty slot, it stores the handle in that   */
+;|*** /* slot and sets the open_count field to 1 and returns success to the       */
+;|*** /* caller.                                                                  */
+;|*** /*                                                                          */
+;|*** /* If it cannot find a matching file handle or an open slot, it returns     */
+;|*** /* FAIL to the caller, indicating that we don't have any more room to hold  */
+;|*** /* the handle information.                                                  */
+;|*** /*                                                                          */
+;|*** /****************************************************************************/
+;|*** /*                                                                          */
+;|*** /* close() processes the CLOSE command from OS/2.  It searches the open     */
+;|*** /* handle array looking for a matching file handle.  When it finds one, it  */
+;|*** /* decrements the open count.  If the count hasn't reached zero, it then    */
+;|*** /* returns success to the caller.  If the count has reached zero, it calls  */
+;|*** /* OS2SCSI to deallocate any devices that were still allocated.  These are  */
+;|*** /* indicated in the array of device handles by a non-zero value.            */
+;|*** /*                                                                          */
+;|*** /* If it can't find a matching file handle, something is obviously wrong -  */
+;|*** /* how can we get a CLOSE when we didn't get a matching OPEN.  It really    */
+;|*** /* means that our records have been hosed.  In this case, we return FAIL    */
+;|*** /* to the caller.                                                           */
+;|*** /*                                                                          */
+;|*** /****************************************************************************/
+;|*** /*                                                                          */
+;|*** /* get_avail_devh() returns a count of the empty device handle slots for a  */
+;|*** /* given file handle.  It is used when an application is doing an Allocate  */
+;|*** /* to make sure we have room to store the device handle.                    */
+;|*** /*                                                                          */
+;|*** /****************************************************************************/
+;|*** /*                                                                          */
+;|*** /* set_new_devh() stores a device handle in the array record associated     */
+;|*** /* with a given file handle.  If the device handle array is full, it        */
+;|*** /* returns an error to the caller.                                          */
+;|*** /*                                                                          */
+;|*** /****************************************************************************/
+;|*** /*                                                                          */
+;|*** /* delete_devh() removes a device handle from the array record for a given  */
+;|*** /* file handle.  If it doesn't find the record or doesn't find the device   */
+;|*** /* handle in the record, it retuns an error.  If it does find the device    */
+;|*** /* handle in the record, it sets the entry to zero and decrements the       */
+;|*** /* device handle counter for this file handle.                              */
+;|*** /*                                                                          */
+;|*** /****************************************************************************/
+;|*** #include "genscsi.h"
+; Line 81
+;|*** #include "const.h"
+; Line 1
+;|*** #include "struc.h"
+; Line 2
+;|*** #include "externs.h"
+; Line 3
+;|*** 
+;|*** #define MAX_OPENS 50
+;|*** #define MAX_DHANDS 8
+;|*** 
+;|*** /* Define the file handle record */
+;|*** /*   there is a slot for the handle itself, now many opens we've seen for */
+;|*** /*   this handle, how many device handles we've been given and the handles */
+;|*** /*   thmselves.  */
+;|*** typedef struct {
+;|***    word file_handle;
+;|***    word open_count;
+;|***    word alloc_count;
+;|***    word dhandle[MAX_DHANDS];
+;|***    } open_info_type;
+;|*** 
+;|*** /* Create an array of file handle records */
+;|*** open_info_type open_info[MAX_OPENS];
+;|*** 
+;|*** void far open_init(void)
+;|*** {
+; Line 101
+	PUBLIC	_open_init
+_open_init	PROC FAR
+	*** 000000	55 			push	bp
+	*** 000001	8b ec 			mov	bp,sp
+	*** 000003	81 ec 04 00 		sub	sp,4
+	*** 000007	57 			push	di
+	*** 000008	56 			push	si
+;	i = -2
+;	j = -4
+;|***    word i;
+;|***    word j;
+;|*** 
+;|***    for (i=0; i<MAX_OPENS; i++) {
+; Line 105
+	*** 000009	c7 46 fe 00 00 		mov	WORD PTR [bp-2],0	;i
+	*** 00000e	e9 03 00 		jmp	$F185
+					$FC186:
+	*** 000011	ff 46 fe 		inc	WORD PTR [bp-2]	;i
+					$F185:
+	*** 000014	83 7e fe 32 		cmp	WORD PTR [bp-2],50	;i
+	*** 000018	72 03 			jb	$JCC24
+	*** 00001a	e9 6a 00 		jmp	$FB187
+					$JCC24:
+;|***       open_info[i].file_handle = 0;
+; Line 106
+	*** 00001d	b8 16 00 		mov	ax,22
+	*** 000020	f7 66 fe 		mul	WORD PTR [bp-2]	;i
+	*** 000023	8b d8 			mov	bx,ax
+MAINSEG      ENDS
+CONST      SEGMENT
+$T20000	DW SEG _open_info 
+CONST      ENDS
+MAINSEG      SEGMENT
+	ASSUME	CS: MAINSEG
+	*** 000025	8e 06 00 00 		mov	es,WORD PTR $T20000
+	*** 000029	26 c7 87 00 00 00 00 	mov	WORD PTR es:_open_info[bx],0
+;|***       open_info[i].open_count  = 0;
+; Line 107
+	*** 000030	b8 16 00 		mov	ax,22
+	*** 000033	f7 66 fe 		mul	WORD PTR [bp-2]	;i
+	*** 000036	8b d8 			mov	bx,ax
+	*** 000038	26 c7 87 02 00 00 00 	mov	WORD PTR es:_open_info[bx+2],0
+;|***       open_info[i].alloc_count  = 0;
+; Line 108
+	*** 00003f	b8 16 00 		mov	ax,22
+	*** 000042	f7 66 fe 		mul	WORD PTR [bp-2]	;i
+	*** 000045	8b d8 			mov	bx,ax
+	*** 000047	26 c7 87 04 00 00 00 	mov	WORD PTR es:_open_info[bx+4],0
+;|***       for (j=0; j<MAX_DHANDS; j++) { open_info[i].dhandle[j]  = 0; }
+; Line 109
+	*** 00004e	c7 46 fc 00 00 		mov	WORD PTR [bp-4],0	;j
+	*** 000053	e9 03 00 		jmp	$F188
+					$FC189:
+	*** 000056	ff 46 fc 		inc	WORD PTR [bp-4]	;j
+					$F188:
+	*** 000059	83 7e fc 08 		cmp	WORD PTR [bp-4],8	;j
+	*** 00005d	72 03 			jb	$JCC93
+	*** 00005f	e9 22 00 		jmp	$FB190
+					$JCC93:
+	*** 000062	8e 06 00 00 		mov	es,WORD PTR $T20000
+	*** 000066	8b 5e fe 		mov	bx,WORD PTR [bp-2]	;i
+	*** 000069	8b c3 			mov	ax,bx
+	*** 00006b	d1 e3 			shl	bx,1
+	*** 00006d	d1 e3 			shl	bx,1
+	*** 00006f	03 d8 			add	bx,ax
+	*** 000071	d1 e3 			shl	bx,1
+	*** 000073	03 d8 			add	bx,ax
+	*** 000075	03 5e fc 		add	bx,WORD PTR [bp-4]	;j
+	*** 000078	d1 e3 			shl	bx,1
+	*** 00007a	26 c7 87 06 00 00 00 	mov	WORD PTR es:_open_info[bx+6],0
+	*** 000081	e9 d2 ff 		jmp	$FC189
+					$FB190:
+;|***       }
+; Line 110
+	*** 000084	e9 8a ff 		jmp	$FC186
+					$FB187:
+;|*** }
+; Line 111
+					$EX182:
+	*** 000087	5e 			pop	si
+	*** 000088	5f 			pop	di
+	*** 000089	8b e5 			mov	sp,bp
+	*** 00008b	5d 			pop	bp
+	*** 00008c	cb 			ret	
+
+_open_init	ENDP
+;|*** 
+;|*** int far open(reqhdr_type *in_req)
+;|*** {
+; Line 114
+	PUBLIC	_open
+_open	PROC FAR
+	*** 00008d	55 			push	bp
+	*** 00008e	8b ec 			mov	bp,sp
+	*** 000090	81 ec 0c 00 		sub	sp,12
+	*** 000094	57 			push	di
+	*** 000095	56 			push	si
+;	req = -6
+;	fhandle = -2
+;	found = -12
+;	i = -8
+;	j = -10
+;	in_req = 6
+;|***    open_hdr     *req;
+;|***    word          fhandle;
+;|***    word          found;
+;|***    word i;
+;|***    word j;
+;|*** 
+;|***    /* Cast the request header */
+;|***    req = (open_hdr *)in_req;
+; Line 122
+	*** 000096	8b 46 06 		mov	ax,WORD PTR [bp+6]	;in_req
+	*** 000099	8b 56 08 		mov	dx,WORD PTR [bp+8]
+	*** 00009c	89 46 fa 		mov	WORD PTR [bp-6],ax	;req
+	*** 00009f	89 56 fc 		mov	WORD PTR [bp-4],dx
+;|*** 
+;|***    /* Mark it good for now */
+;|***    req->rh_stat = DONE;
+; Line 125
+	*** 0000a2	c4 5e fa 		les	bx,DWORD PTR [bp-6]	;req
+	*** 0000a5	26 c7 47 03 00 01 	mov	WORD PTR es:[bx+3],256
+;|*** 
+;|***    /* Hunt for the file handle in the open array */
+;|***    fhandle = req->file_number;
+; Line 128
+	*** 0000ab	c4 5e fa 		les	bx,DWORD PTR [bp-6]	;req
+	*** 0000ae	26 8b 47 0d 		mov	ax,WORD PTR es:[bx+13]
+	*** 0000b2	89 46 fe 		mov	WORD PTR [bp-2],ax	;fhandle
+;|***    found = 0;
+; Line 129
+	*** 0000b5	c7 46 f4 00 00 		mov	WORD PTR [bp-12],0	;found
+;|***    for (i=0; i<MAX_OPENS; i++) {
+; Line 130
+	*** 0000ba	c7 46 f8 00 00 		mov	WORD PTR [bp-8],0	;i
+	*** 0000bf	e9 03 00 		jmp	$F198
+					$FC199:
+	*** 0000c2	ff 46 f8 		inc	WORD PTR [bp-8]	;i
+					$F198:
+	*** 0000c5	83 7e f8 32 		cmp	WORD PTR [bp-8],50	;i
+	*** 0000c9	72 03 			jb	$JCC201
+	*** 0000cb	e9 24 00 		jmp	$FB200
+					$JCC201:
+;|***       if (open_info[i].file_handle == fhandle) {
+; Line 131
+	*** 0000ce	b8 16 00 		mov	ax,22
+	*** 0000d1	f7 66 f8 		mul	WORD PTR [bp-8]	;i
+	*** 0000d4	8b d8 			mov	bx,ax
+	*** 0000d6	8e 06 00 00 		mov	es,WORD PTR $T20000
+	*** 0000da	8b 46 fe 		mov	ax,WORD PTR [bp-2]	;fhandle
+	*** 0000dd	26 39 87 00 00 		cmp	WORD PTR es:_open_info[bx],ax
+	*** 0000e2	74 03 			je	$JCC226
+	*** 0000e4	e9 08 00 		jmp	$I201
+					$JCC226:
+;|***          found = 1;
+; Line 132
+	*** 0000e7	c7 46 f4 01 00 		mov	WORD PTR [bp-12],1	;found
+;|***          break;
+; Line 133
+	*** 0000ec	e9 03 00 		jmp	$FB200
+;|***          }
+; Line 134
+;|***       }
+; Line 135
+					$I201:
+	*** 0000ef	e9 d0 ff 		jmp	$FC199
+					$FB200:
+;|*** 
+;|***    /* If we found it, just increment the count */
+;|***    if (found) { open_info[i].open_count++; }
+; Line 138
+	*** 0000f2	83 7e f4 00 		cmp	WORD PTR [bp-12],0	;found
+	*** 0000f6	75 03 			jne	$JCC246
+	*** 0000f8	e9 14 00 		jmp	$I202
+					$JCC246:
+	*** 0000fb	b8 16 00 		mov	ax,22
+	*** 0000fe	f7 66 f8 		mul	WORD PTR [bp-8]	;i
+	*** 000101	8b d8 			mov	bx,ax
+	*** 000103	8e 06 00 00 		mov	es,WORD PTR $T20000
+	*** 000107	26 ff 87 02 00 		inc	WORD PTR es:_open_info[bx+2]
+;|*** 
+;|***    /* Else we didn't, so hunt for an open slot to put this one */
+;|***    else {
+; Line 141
+	*** 00010c	e9 3b 00 		jmp	$I203
+					$I202:
+;|***       found = 0;
+; Line 142
+	*** 00010f	c7 46 f4 00 00 		mov	WORD PTR [bp-12],0	;found
+;|***       for (i=0; i<MAX_OPENS; i++) {
+; Line 143
+	*** 000114	c7 46 f8 00 00 		mov	WORD PTR [bp-8],0	;i
+	*** 000119	e9 03 00 		jmp	$F204
+					$FC205:
+	*** 00011c	ff 46 f8 		inc	WORD PTR [bp-8]	;i
+					$F204:
+	*** 00011f	83 7e f8 32 		cmp	WORD PTR [bp-8],50	;i
+	*** 000123	72 03 			jb	$JCC291
+	*** 000125	e9 22 00 		jmp	$FB206
+					$JCC291:
+;|***          if (open_info[i].file_handle == 0) {
+; Line 144
+	*** 000128	b8 16 00 		mov	ax,22
+	*** 00012b	f7 66 f8 		mul	WORD PTR [bp-8]	;i
+	*** 00012e	8b d8 			mov	bx,ax
+	*** 000130	8e 06 00 00 		mov	es,WORD PTR $T20000
+	*** 000134	26 83 bf 00 00 00 	cmp	WORD PTR es:_open_info[bx],0
+	*** 00013a	74 03 			je	$JCC314
+	*** 00013c	e9 08 00 		jmp	$I207
+					$JCC314:
+;|***             found = 1;
+; Line 145
+	*** 00013f	c7 46 f4 01 00 		mov	WORD PTR [bp-12],1	;found
+;|***             break;
+; Line 146
+	*** 000144	e9 03 00 		jmp	$FB206
+;|***             }
+; Line 147
+;|***          }
+; Line 148
+					$I207:
+	*** 000147	e9 d2 ff 		jmp	$FC205
+					$FB206:
+;|***       }
+; Line 149
+					$I203:
+;|*** 
+;|*** 
+;|***    /* If we found an open slot, put this one here and set the count to 1 */
+;|***    if (found) {
+; Line 153
+	*** 00014a	83 7e f4 00 		cmp	WORD PTR [bp-12],0	;found
+	*** 00014e	75 03 			jne	$JCC334
+	*** 000150	e9 6b 00 		jmp	$I208
+					$JCC334:
+;|***       open_info[i].open_count = 1;
+; Line 154
+	*** 000153	b8 16 00 		mov	ax,22
+	*** 000156	f7 66 f8 		mul	WORD PTR [bp-8]	;i
+	*** 000159	8b d8 			mov	bx,ax
+	*** 00015b	8e 06 00 00 		mov	es,WORD PTR $T20000
+	*** 00015f	26 c7 87 02 00 01 00 	mov	WORD PTR es:_open_info[bx+2],1
+;|***       open_info[i].alloc_count = 1;
+; Line 155
+	*** 000166	b8 16 00 		mov	ax,22
+	*** 000169	f7 66 f8 		mul	WORD PTR [bp-8]	;i
+	*** 00016c	8b d8 			mov	bx,ax
+	*** 00016e	26 c7 87 04 00 01 00 	mov	WORD PTR es:_open_info[bx+4],1
+;|***       open_info[i].file_handle = fhandle;
+; Line 156
+	*** 000175	b8 16 00 		mov	ax,22
+	*** 000178	f7 66 f8 		mul	WORD PTR [bp-8]	;i
+	*** 00017b	8b d8 			mov	bx,ax
+	*** 00017d	8b 46 fe 		mov	ax,WORD PTR [bp-2]	;fhandle
+	*** 000180	26 89 87 00 00 		mov	WORD PTR es:_open_info[bx],ax
+;|***       for (j=0; j<MAX_DHANDS; j++) { open_info[i].dhandle[j]  = 0; }
+; Line 157
+	*** 000185	c7 46 f6 00 00 		mov	WORD PTR [bp-10],0	;j
+	*** 00018a	e9 03 00 		jmp	$F209
+					$FC210:
+	*** 00018d	ff 46 f6 		inc	WORD PTR [bp-10]	;j
+					$F209:
+	*** 000190	83 7e f6 08 		cmp	WORD PTR [bp-10],8	;j
+	*** 000194	72 03 			jb	$JCC404
+	*** 000196	e9 22 00 		jmp	$FB211
+					$JCC404:
+	*** 000199	8e 06 00 00 		mov	es,WORD PTR $T20000
+	*** 00019d	8b 5e f8 		mov	bx,WORD PTR [bp-8]	;i
+	*** 0001a0	8b c3 			mov	ax,bx
+	*** 0001a2	d1 e3 			shl	bx,1
+	*** 0001a4	d1 e3 			shl	bx,1
+	*** 0001a6	03 d8 			add	bx,ax
+	*** 0001a8	d1 e3 			shl	bx,1
+	*** 0001aa	03 d8 			add	bx,ax
+	*** 0001ac	03 5e f6 		add	bx,WORD PTR [bp-10]	;j
+	*** 0001af	d1 e3 			shl	bx,1
+	*** 0001b1	26 c7 87 06 00 00 00 	mov	WORD PTR es:_open_info[bx+6],0
+	*** 0001b8	e9 d2 ff 		jmp	$FC210
+					$FB211:
+;|***       }
+; Line 158
+;|*** 
+;|***    /* Else there are no more open slots, so return an error */
+;|***    else {
+; Line 161
+	*** 0001bb	e9 09 00 		jmp	$I212
+					$I208:
+;|***       req->rh_stat = DONE+ERROR+255;
+; Line 162
+	*** 0001be	c4 5e fa 		les	bx,DWORD PTR [bp-6]	;req
+	*** 0001c1	26 c7 47 03 ff 81 	mov	WORD PTR es:[bx+3],-32257
+;|***       }
+; Line 163
+					$I212:
+;|*** 
+;|***    /* Devdone the packet  */
+;|***    return(req->rh_stat);
+; Line 166
+	*** 0001c7	c4 5e fa 		les	bx,DWORD PTR [bp-6]	;req
+	*** 0001ca	26 8b 47 03 		mov	ax,WORD PTR es:[bx+3]
+	*** 0001ce	e9 00 00 		jmp	$EX192
+;|*** 
+;|*** }
+; Line 168
+					$EX192:
+	*** 0001d1	5e 			pop	si
+	*** 0001d2	5f 			pop	di
+	*** 0001d3	8b e5 			mov	sp,bp
+	*** 0001d5	5d 			pop	bp
+	*** 0001d6	cb 			ret	
+
+_open	ENDP
+;|*** 
+;|*** int far close(reqhdr_type *in_req)
+;|*** {
+; Line 171
+	PUBLIC	_close
+_close	PROC FAR
+	*** 0001d7	55 			push	bp
+	*** 0001d8	8b ec 			mov	bp,sp
+	*** 0001da	81 ec 0e 00 		sub	sp,14
+	*** 0001de	57 			push	di
+	*** 0001df	56 			push	si
+;	req = -8
+;	fhandle = -4
+;	dhandle = -2
+;	found = -14
+;	i = -10
+;	j = -12
+;	in_req = 6
+;|***    open_hdr     *req;
+;|***    word          fhandle;
+;|***    word          dhandle;
+;|***    word          found;
+;|***    word i;
+;|***    word j;
+;|*** 
+;|***    /* Cast the request header */
+;|***    req = (open_hdr *)in_req;
+; Line 180
+	*** 0001e0	8b 46 06 		mov	ax,WORD PTR [bp+6]	;in_req
+	*** 0001e3	8b 56 08 		mov	dx,WORD PTR [bp+8]
+	*** 0001e6	89 46 f8 		mov	WORD PTR [bp-8],ax	;req
+	*** 0001e9	89 56 fa 		mov	WORD PTR [bp-6],dx
+;|*** 
+;|***    /* Mark it good for now */
+;|***    req->rh_stat = DONE;
+; Line 183
+	*** 0001ec	c4 5e f8 		les	bx,DWORD PTR [bp-8]	;req
+	*** 0001ef	26 c7 47 03 00 01 	mov	WORD PTR es:[bx+3],256
+;|*** 
+;|***    /* Hunt for the file handle in the open array */
+;|***    fhandle = req->file_number;
+; Line 186
+	*** 0001f5	c4 5e f8 		les	bx,DWORD PTR [bp-8]	;req
+	*** 0001f8	26 8b 47 0d 		mov	ax,WORD PTR es:[bx+13]
+	*** 0001fc	89 46 fc 		mov	WORD PTR [bp-4],ax	;fhandle
+;|***    found = 0;
+; Line 187
+	*** 0001ff	c7 46 f2 00 00 		mov	WORD PTR [bp-14],0	;found
+;|***    for (i=0; i<MAX_OPENS; i++) {
+; Line 188
+	*** 000204	c7 46 f6 00 00 		mov	WORD PTR [bp-10],0	;i
+	*** 000209	e9 03 00 		jmp	$F221
+					$FC222:
+	*** 00020c	ff 46 f6 		inc	WORD PTR [bp-10]	;i
+					$F221:
+	*** 00020f	83 7e f6 32 		cmp	WORD PTR [bp-10],50	;i
+	*** 000213	72 03 			jb	$JCC531
+	*** 000215	e9 24 00 		jmp	$FB223
+					$JCC531:
+;|***       if (open_info[i].file_handle == fhandle) {
+; Line 189
+	*** 000218	b8 16 00 		mov	ax,22
+	*** 00021b	f7 66 f6 		mul	WORD PTR [bp-10]	;i
+	*** 00021e	8b d8 			mov	bx,ax
+	*** 000220	8e 06 00 00 		mov	es,WORD PTR $T20000
+	*** 000224	8b 46 fc 		mov	ax,WORD PTR [bp-4]	;fhandle
+	*** 000227	26 39 87 00 00 		cmp	WORD PTR es:_open_info[bx],ax
+	*** 00022c	74 03 			je	$JCC556
+	*** 00022e	e9 08 00 		jmp	$I224
+					$JCC556:
+;|***          found = 1;
+; Line 190
+	*** 000231	c7 46 f2 01 00 		mov	WORD PTR [bp-14],1	;found
+;|***          break;
+; Line 191
+	*** 000236	e9 03 00 		jmp	$FB223
+;|***          }
+; Line 192
+;|***       }
+; Line 193
+					$I224:
+	*** 000239	e9 d0 ff 		jmp	$FC222
+					$FB223:
+;|*** 
+;|***    /* If we found it, just decrement the count */
+;|***    if (found) {
+; Line 196
+	*** 00023c	83 7e f2 00 		cmp	WORD PTR [bp-14],0	;found
+	*** 000240	75 03 			jne	$JCC576
+	*** 000242	e9 b6 00 		jmp	$I225
+					$JCC576:
+;|***       open_info[i].open_count--;
+; Line 197
+	*** 000245	b8 16 00 		mov	ax,22
+	*** 000248	f7 66 f6 		mul	WORD PTR [bp-10]	;i
+	*** 00024b	8b d8 			mov	bx,ax
+	*** 00024d	8e 06 00 00 		mov	es,WORD PTR $T20000
+	*** 000251	26 ff 8f 02 00 		dec	WORD PTR es:_open_info[bx+2]
+;|*** 
+;|***       /* if the count went to 0, empty the slot, freeing any device handles */
+;|***       /* still allocated                                                    */
+;|***       if (open_info[i].open_count) {}
+; Line 201
+	*** 000256	b8 16 00 		mov	ax,22
+	*** 000259	f7 66 f6 		mul	WORD PTR [bp-10]	;i
+	*** 00025c	8b d8 			mov	bx,ax
+	*** 00025e	26 83 bf 02 00 00 	cmp	WORD PTR es:_open_info[bx+2],0
+	*** 000264	75 03 			jne	$JCC612
+	*** 000266	e9 03 00 		jmp	$I226
+					$JCC612:
+;|***       else {
+; Line 202
+	*** 000269	e9 8c 00 		jmp	$I227
+					$I226:
+;|***          open_info[i].alloc_count = 0;
+; Line 203
+	*** 00026c	b8 16 00 		mov	ax,22
+	*** 00026f	f7 66 f6 		mul	WORD PTR [bp-10]	;i
+	*** 000272	8b d8 			mov	bx,ax
+	*** 000274	8e 06 00 00 		mov	es,WORD PTR $T20000
+	*** 000278	26 c7 87 04 00 00 00 	mov	WORD PTR es:_open_info[bx+4],0
+;|***          open_info[i].file_handle = 0;
+; Line 204
+	*** 00027f	b8 16 00 		mov	ax,22
+	*** 000282	f7 66 f6 		mul	WORD PTR [bp-10]	;i
+	*** 000285	8b d8 			mov	bx,ax
+	*** 000287	26 c7 87 00 00 00 00 	mov	WORD PTR es:_open_info[bx],0
+;|***          for (j=0; j<MAX_DHANDS; j++) {
+; Line 205
+	*** 00028e	c7 46 f4 00 00 		mov	WORD PTR [bp-12],0	;j
+	*** 000293	e9 03 00 		jmp	$F228
+					$FC229:
+	*** 000296	ff 46 f4 		inc	WORD PTR [bp-12]	;j
+					$F228:
+	*** 000299	83 7e f4 08 		cmp	WORD PTR [bp-12],8	;j
+	*** 00029d	72 03 			jb	$JCC669
+	*** 00029f	e9 56 00 		jmp	$FB230
+					$JCC669:
+;|***             dhandle = open_info[i].dhandle[j];
+; Line 206
+	*** 0002a2	8e 06 00 00 		mov	es,WORD PTR $T20000
+	*** 0002a6	8b 5e f6 		mov	bx,WORD PTR [bp-10]	;i
+	*** 0002a9	8b c3 			mov	ax,bx
+	*** 0002ab	d1 e3 			shl	bx,1
+	*** 0002ad	d1 e3 			shl	bx,1
+	*** 0002af	03 d8 			add	bx,ax
+	*** 0002b1	d1 e3 			shl	bx,1
+	*** 0002b3	03 d8 			add	bx,ax
+	*** 0002b5	03 5e f4 		add	bx,WORD PTR [bp-12]	;j
+	*** 0002b8	d1 e3 			shl	bx,1
+	*** 0002ba	26 8b 87 06 00 		mov	ax,WORD PTR es:_open_info[bx+6]
+	*** 0002bf	89 46 fe 		mov	WORD PTR [bp-2],ax	;dhandle
+;|***             if (dhandle) {
+; Line 207
+	*** 0002c2	83 7e fe 00 		cmp	WORD PTR [bp-2],0	;dhandle
+	*** 0002c6	75 03 			jne	$JCC710
+	*** 0002c8	e9 2a 00 		jmp	$I231
+					$JCC710:
+;|***                free_dhand(dhandle);
+; Line 208
+	*** 0002cb	ff 76 fe 		push	WORD PTR [bp-2]	;dhandle
+	*** 0002ce	9a 00 00 00 00 		call	FAR PTR _free_dhand
+	*** 0002d3	83 c4 02 		add	sp,2
+;|***                open_info[i].dhandle[j]  = 0;
+; Line 209
+	*** 0002d6	8e 06 00 00 		mov	es,WORD PTR $T20000
+	*** 0002da	8b 5e f6 		mov	bx,WORD PTR [bp-10]	;i
+	*** 0002dd	8b c3 			mov	ax,bx
+	*** 0002df	d1 e3 			shl	bx,1
+	*** 0002e1	d1 e3 			shl	bx,1
+	*** 0002e3	03 d8 			add	bx,ax
+	*** 0002e5	d1 e3 			shl	bx,1
+	*** 0002e7	03 d8 			add	bx,ax
+	*** 0002e9	03 5e f4 		add	bx,WORD PTR [bp-12]	;j
+	*** 0002ec	d1 e3 			shl	bx,1
+	*** 0002ee	26 c7 87 06 00 00 00 	mov	WORD PTR es:_open_info[bx+6],0
+;|***                }
+; Line 210
+;|***             }
+; Line 211
+					$I231:
+	*** 0002f5	e9 9e ff 		jmp	$FC229
+					$FB230:
+;|***          }
+; Line 212
+					$I227:
+;|***       }
+; Line 213
+;|*** 
+;|***    /* Else we didn't find it, something broke */
+;|***    else {
+; Line 216
+	*** 0002f8	e9 09 00 		jmp	$I232
+					$I225:
+;|***       req->rh_stat = DONE+ERROR+255;
+; Line 217
+	*** 0002fb	c4 5e f8 		les	bx,DWORD PTR [bp-8]	;req
+	*** 0002fe	26 c7 47 03 ff 81 	mov	WORD PTR es:[bx+3],-32257
+;|***       }
+; Line 218
+					$I232:
+;|*** 
+;|***    /* Devdone the packet  */
+;|***    return(req->rh_stat);
+; Line 221
+	*** 000304	c4 5e f8 		les	bx,DWORD PTR [bp-8]	;req
+	*** 000307	26 8b 47 03 		mov	ax,WORD PTR es:[bx+3]
+	*** 00030b	e9 00 00 		jmp	$EX214
+;|*** 
+;|*** }
+; Line 223
+					$EX214:
+	*** 00030e	5e 			pop	si
+	*** 00030f	5f 			pop	di
+	*** 000310	8b e5 			mov	sp,bp
+	*** 000312	5d 			pop	bp
+	*** 000313	cb 			ret	
+
+_close	ENDP
+;|*** 
+;|*** /* Get the number of available device handles */
+;|*** word get_avail_devh(word fhandle)
+;|*** {
+; Line 227
+	PUBLIC	_get_avail_devh
+_get_avail_devh	PROC FAR
+	*** 000314	55 			push	bp
+	*** 000315	8b ec 			mov	bp,sp
+	*** 000317	81 ec 04 00 		sub	sp,4
+	*** 00031b	57 			push	di
+	*** 00031c	56 			push	si
+;	i = -2
+;	found = -4
+;	fhandle = 6
+;|***    int i;
+;|***    int found;
+;|*** 
+;|***    /* Search for the matching record in the open array */
+;|***    found = 0;
+; Line 232
+	*** 00031d	c7 46 fc 00 00 		mov	WORD PTR [bp-4],0	;found
+;|***    for (i=0; i<MAX_OPENS; i++) {
+; Line 233
+	*** 000322	c7 46 fe 00 00 		mov	WORD PTR [bp-2],0	;i
+	*** 000327	e9 03 00 		jmp	$F237
+					$FC238:
+	*** 00032a	ff 46 fe 		inc	WORD PTR [bp-2]	;i
+					$F237:
+	*** 00032d	83 7e fe 32 		cmp	WORD PTR [bp-2],50	;i
+	*** 000331	7c 03 			jl	$JCC817
+	*** 000333	e9 24 00 		jmp	$FB239
+					$JCC817:
+;|***       if (open_info[i].file_handle == fhandle) {
+; Line 234
+	*** 000336	b8 16 00 		mov	ax,22
+	*** 000339	f7 6e fe 		imul	WORD PTR [bp-2]	;i
+	*** 00033c	8b d8 			mov	bx,ax
+	*** 00033e	8e 06 00 00 		mov	es,WORD PTR $T20000
+	*** 000342	8b 46 06 		mov	ax,WORD PTR [bp+6]	;fhandle
+	*** 000345	26 39 87 00 00 		cmp	WORD PTR es:_open_info[bx],ax
+	*** 00034a	74 03 			je	$JCC842
+	*** 00034c	e9 08 00 		jmp	$I240
+					$JCC842:
+;|***          found = 1;
+; Line 235
+	*** 00034f	c7 46 fc 01 00 		mov	WORD PTR [bp-4],1	;found
+;|***          break;
+; Line 236
+	*** 000354	e9 03 00 		jmp	$FB239
+;|***          }
+; Line 237
+;|***       }
+; Line 238
+					$I240:
+	*** 000357	e9 d0 ff 		jmp	$FC238
+					$FB239:
+;|***    if (found) { return(MAX_DHANDS - open_info[i].alloc_count); }
+; Line 239
+	*** 00035a	83 7e fc 00 		cmp	WORD PTR [bp-4],0	;found
+	*** 00035e	75 03 			jne	$JCC862
+	*** 000360	e9 1a 00 		jmp	$I241
+					$JCC862:
+	*** 000363	b8 16 00 		mov	ax,22
+	*** 000366	f7 6e fe 		imul	WORD PTR [bp-2]	;i
+	*** 000369	8b d8 			mov	bx,ax
+	*** 00036b	8e 06 00 00 		mov	es,WORD PTR $T20000
+	*** 00036f	b8 08 00 		mov	ax,8
+	*** 000372	26 2b 87 04 00 		sub	ax,WORD PTR es:_open_info[bx+4]
+	*** 000377	e9 09 00 		jmp	$EX234
+;|***    else       { return(MAX_DHANDS); }
+; Line 240
+	*** 00037a	e9 06 00 		jmp	$I242
+					$I241:
+	*** 00037d	b8 08 00 		mov	ax,8
+	*** 000380	e9 00 00 		jmp	$EX234
+					$I242:
+;|*** }
+; Line 241
+					$EX234:
+	*** 000383	5e 			pop	si
+	*** 000384	5f 			pop	di
+	*** 000385	8b e5 			mov	sp,bp
+	*** 000387	5d 			pop	bp
+	*** 000388	cb 			ret	
+
+_get_avail_devh	ENDP
+;|*** 
+;|*** /* Set a new device handle */
+;|*** word set_new_devh(word fhandle, word dhandle)
+;|*** {
+; Line 245
+	PUBLIC	_set_new_devh
+_set_new_devh	PROC FAR
+	*** 000389	55 			push	bp
+	*** 00038a	8b ec 			mov	bp,sp
+	*** 00038c	81 ec 06 00 		sub	sp,6
+	*** 000390	57 			push	di
+	*** 000391	56 			push	si
+;	i = -2
+;	j = -4
+;	found = -6
+;	dhandle = 8
+;	fhandle = 6
+;|***    int i;
+;|***    int j;
+;|***    int found;
+;|*** 
+;|***    /* Search for the matching record in the open array */
+;|***    found = 0;
+; Line 251
+	*** 000392	c7 46 fa 00 00 		mov	WORD PTR [bp-6],0	;found
+;|***    for (i=0; i<MAX_OPENS; i++) {
+; Line 252
+	*** 000397	c7 46 fe 00 00 		mov	WORD PTR [bp-2],0	;i
+	*** 00039c	e9 03 00 		jmp	$F249
+					$FC250:
+	*** 00039f	ff 46 fe 		inc	WORD PTR [bp-2]	;i
+					$F249:
+	*** 0003a2	83 7e fe 32 		cmp	WORD PTR [bp-2],50	;i
+	*** 0003a6	7c 03 			jl	$JCC934
+	*** 0003a8	e9 24 00 		jmp	$FB251
+					$JCC934:
+;|***       if (open_info[i].file_handle == fhandle) {
+; Line 253
+	*** 0003ab	b8 16 00 		mov	ax,22
+	*** 0003ae	f7 6e fe 		imul	WORD PTR [bp-2]	;i
+	*** 0003b1	8b d8 			mov	bx,ax
+	*** 0003b3	8e 06 00 00 		mov	es,WORD PTR $T20000
+	*** 0003b7	8b 46 06 		mov	ax,WORD PTR [bp+6]	;fhandle
+	*** 0003ba	26 39 87 00 00 		cmp	WORD PTR es:_open_info[bx],ax
+	*** 0003bf	74 03 			je	$JCC959
+	*** 0003c1	e9 08 00 		jmp	$I252
+					$JCC959:
+;|***          found = 1;
+; Line 254
+	*** 0003c4	c7 46 fa 01 00 		mov	WORD PTR [bp-6],1	;found
+;|***          break;
+; Line 255
+	*** 0003c9	e9 03 00 		jmp	$FB251
+;|***          }
+; Line 256
+;|***       }
+; Line 257
+					$I252:
+	*** 0003cc	e9 d0 ff 		jmp	$FC250
+					$FB251:
+;|*** 
+;|***    /* If we found a matching file handle */
+;|***    if (found) {
+; Line 260
+	*** 0003cf	83 7e fa 00 		cmp	WORD PTR [bp-6],0	;found
+	*** 0003d3	75 03 			jne	$JCC979
+	*** 0003d5	e9 ac 00 		jmp	$I253
+					$JCC979:
+;|*** 
+;|***       /* Check to make sure that the device handle array isn't full */
+;|***       if (open_info[i].alloc_count == MAX_DHANDS) { return(-1); }
+; Line 263
+	*** 0003d8	b8 16 00 		mov	ax,22
+	*** 0003db	f7 6e fe 		imul	WORD PTR [bp-2]	;i
+	*** 0003de	8b d8 			mov	bx,ax
+	*** 0003e0	8e 06 00 00 		mov	es,WORD PTR $T20000
+	*** 0003e4	26 83 bf 04 00 08 	cmp	WORD PTR es:_open_info[bx+4],8
+	*** 0003ea	74 03 			je	$JCC1002
+	*** 0003ec	e9 06 00 		jmp	$I254
+					$JCC1002:
+	*** 0003ef	b8 ff ff 		mov	ax,-1
+	*** 0003f2	e9 95 00 		jmp	$EX245
+;|*** 
+;|***       /* Look for an empty element in the device handle array */
+;|***       found = 0;
+; Line 266
+					$I254:
+	*** 0003f5	c7 46 fa 00 00 		mov	WORD PTR [bp-6],0	;found
+;|***       for (j=0; i<MAX_DHANDS; j++) {
+; Line 267
+	*** 0003fa	c7 46 fc 00 00 		mov	WORD PTR [bp-4],0	;j
+	*** 0003ff	e9 03 00 		jmp	$F255
+					$FC256:
+	*** 000402	ff 46 fc 		inc	WORD PTR [bp-4]	;j
+					$F255:
+	*** 000405	83 7e fe 08 		cmp	WORD PTR [bp-2],8	;i
+	*** 000409	7c 03 			jl	$JCC1033
+	*** 00040b	e9 2e 00 		jmp	$FB257
+					$JCC1033:
+;|***          if (open_info[i].dhandle[j] == 0) {
+; Line 268
+	*** 00040e	8e 06 00 00 		mov	es,WORD PTR $T20000
+	*** 000412	8b 5e fe 		mov	bx,WORD PTR [bp-2]	;i
+	*** 000415	8b c3 			mov	ax,bx
+	*** 000417	d1 e3 			shl	bx,1
+	*** 000419	d1 e3 			shl	bx,1
+	*** 00041b	03 d8 			add	bx,ax
+	*** 00041d	d1 e3 			shl	bx,1
+	*** 00041f	03 d8 			add	bx,ax
+	*** 000421	03 5e fc 		add	bx,WORD PTR [bp-4]	;j
+	*** 000424	d1 e3 			shl	bx,1
+	*** 000426	26 83 bf 06 00 00 	cmp	WORD PTR es:_open_info[bx+6],0
+	*** 00042c	74 03 			je	$JCC1068
+	*** 00042e	e9 08 00 		jmp	$I258
+					$JCC1068:
+;|***             found = 1;
+; Line 269
+	*** 000431	c7 46 fa 01 00 		mov	WORD PTR [bp-6],1	;found
+;|***             break;
+; Line 270
+	*** 000436	e9 03 00 		jmp	$FB257
+;|***             }
+; Line 271
+;|***          }
+; Line 272
+					$I258:
+	*** 000439	e9 c6 ff 		jmp	$FC256
+					$FB257:
+;|*** 
+;|***       /* If we found one, store the device handle there, and git */
+;|***       if (found) {
+; Line 275
+	*** 00043c	83 7e fa 00 		cmp	WORD PTR [bp-6],0	;found
+	*** 000440	75 03 			jne	$JCC1088
+	*** 000442	e9 36 00 		jmp	$I259
+					$JCC1088:
+;|***          open_info[i].dhandle[j] = dhandle;
+; Line 276
+	*** 000445	8b 46 08 		mov	ax,WORD PTR [bp+8]	;dhandle
+	*** 000448	8e 06 00 00 		mov	es,WORD PTR $T20000
+	*** 00044c	8b 5e fe 		mov	bx,WORD PTR [bp-2]	;i
+	*** 00044f	8b cb 			mov	cx,bx
+	*** 000451	d1 e3 			shl	bx,1
+	*** 000453	d1 e3 			shl	bx,1
+	*** 000455	03 d9 			add	bx,cx
+	*** 000457	d1 e3 			shl	bx,1
+	*** 000459	03 d9 			add	bx,cx
+	*** 00045b	03 5e fc 		add	bx,WORD PTR [bp-4]	;j
+	*** 00045e	d1 e3 			shl	bx,1
+	*** 000460	26 89 87 06 00 		mov	WORD PTR es:_open_info[bx+6],ax
+;|***          open_info[i].alloc_count++;
+; Line 277
+	*** 000465	b8 16 00 		mov	ax,22
+	*** 000468	f7 6e fe 		imul	WORD PTR [bp-2]	;i
+	*** 00046b	8b d8 			mov	bx,ax
+	*** 00046d	26 ff 87 04 00 		inc	WORD PTR es:_open_info[bx+4]
+;|***          return(0);
+; Line 278
+	*** 000472	b8 00 00 		mov	ax,0
+	*** 000475	e9 12 00 		jmp	$EX245
+;|***          }
+; Line 279
+;|*** 
+;|***       /* Else we didn't find one, so return an error */
+;|***       else       { return(-1); }
+; Line 282
+	*** 000478	e9 06 00 		jmp	$I260
+					$I259:
+	*** 00047b	b8 ff ff 		mov	ax,-1
+	*** 00047e	e9 09 00 		jmp	$EX245
+					$I260:
+;|*** 
+;|***       }
+; Line 284
+;|*** 
+;|***    /* If we didn't find a matching file handle, return an error */
+;|***    else {
+; Line 287
+	*** 000481	e9 06 00 		jmp	$I261
+					$I253:
+;|***       return(-1);
+; Line 288
+	*** 000484	b8 ff ff 		mov	ax,-1
+	*** 000487	e9 00 00 		jmp	$EX245
+;|***       }
+; Line 289
+					$I261:
+;|*** }
+; Line 290
+					$EX245:
+	*** 00048a	5e 			pop	si
+	*** 00048b	5f 			pop	di
+	*** 00048c	8b e5 			mov	sp,bp
+	*** 00048e	5d 			pop	bp
+	*** 00048f	cb 			ret	
+
+_set_new_devh	ENDP
+;|*** 
+;|*** /* Delete a device handle */
+;|*** word delete_devh(word fhandle, word dhandle)
+;|*** {
+; Line 294
+	PUBLIC	_delete_devh
+_delete_devh	PROC FAR
+	*** 000490	55 			push	bp
+	*** 000491	8b ec 			mov	bp,sp
+	*** 000493	81 ec 06 00 		sub	sp,6
+	*** 000497	57 			push	di
+	*** 000498	56 			push	si
+;	i = -2
+;	j = -4
+;	found = -6
+;	dhandle = 8
+;	fhandle = 6
+;|***    int i;
+;|***    int j;
+;|***    int found;
+;|*** 
+;|***    /* Search for the matching record in the open array */
+;|***    found = 0;
+; Line 300
+	*** 000499	c7 46 fa 00 00 		mov	WORD PTR [bp-6],0	;found
+;|***    for (i=0; i<MAX_OPENS; i++) {
+; Line 301
+	*** 00049e	c7 46 fe 00 00 		mov	WORD PTR [bp-2],0	;i
+	*** 0004a3	e9 03 00 		jmp	$F268
+					$FC269:
+	*** 0004a6	ff 46 fe 		inc	WORD PTR [bp-2]	;i
+					$F268:
+	*** 0004a9	83 7e fe 32 		cmp	WORD PTR [bp-2],50	;i
+	*** 0004ad	7c 03 			jl	$JCC1197
+	*** 0004af	e9 24 00 		jmp	$FB270
+					$JCC1197:
+;|***       if (open_info[i].file_handle == fhandle) {
+; Line 302
+	*** 0004b2	b8 16 00 		mov	ax,22
+	*** 0004b5	f7 6e fe 		imul	WORD PTR [bp-2]	;i
+	*** 0004b8	8b d8 			mov	bx,ax
+	*** 0004ba	8e 06 00 00 		mov	es,WORD PTR $T20000
+	*** 0004be	8b 46 06 		mov	ax,WORD PTR [bp+6]	;fhandle
+	*** 0004c1	26 39 87 00 00 		cmp	WORD PTR es:_open_info[bx],ax
+	*** 0004c6	74 03 			je	$JCC1222
+	*** 0004c8	e9 08 00 		jmp	$I271
+					$JCC1222:
+;|***          found = 1;
+; Line 303
+	*** 0004cb	c7 46 fa 01 00 		mov	WORD PTR [bp-6],1	;found
+;|***          break;
+; Line 304
+	*** 0004d0	e9 03 00 		jmp	$FB270
+;|***          }
+; Line 305
+;|***       }
+; Line 306
+					$I271:
+	*** 0004d3	e9 d0 ff 		jmp	$FC269
+					$FB270:
+;|*** 
+;|***    /* If we found a matching file handle */
+;|***    if (found) {
+; Line 309
+	*** 0004d6	83 7e fa 00 		cmp	WORD PTR [bp-6],0	;found
+	*** 0004da	75 03 			jne	$JCC1242
+	*** 0004dc	e9 ad 00 		jmp	$I272
+					$JCC1242:
+;|*** 
+;|***       /* Check to make sure that the device handle array isn't empty */
+;|***       if (open_info[i].alloc_count == 0) { return(-1); }
+; Line 312
+	*** 0004df	b8 16 00 		mov	ax,22
+	*** 0004e2	f7 6e fe 		imul	WORD PTR [bp-2]	;i
+	*** 0004e5	8b d8 			mov	bx,ax
+	*** 0004e7	8e 06 00 00 		mov	es,WORD PTR $T20000
+	*** 0004eb	26 83 bf 04 00 00 	cmp	WORD PTR es:_open_info[bx+4],0
+	*** 0004f1	74 03 			je	$JCC1265
+	*** 0004f3	e9 06 00 		jmp	$I273
+					$JCC1265:
+	*** 0004f6	b8 ff ff 		mov	ax,-1
+	*** 0004f9	e9 96 00 		jmp	$EX264
+;|*** 
+;|***       /* Look for an matching element in the device handle array */
+;|***       found = 0;
+; Line 315
+					$I273:
+	*** 0004fc	c7 46 fa 00 00 		mov	WORD PTR [bp-6],0	;found
+;|***       for (j=0; i<MAX_DHANDS; j++) {
+; Line 316
+	*** 000501	c7 46 fc 00 00 		mov	WORD PTR [bp-4],0	;j
+	*** 000506	e9 03 00 		jmp	$F274
+					$FC275:
+	*** 000509	ff 46 fc 		inc	WORD PTR [bp-4]	;j
+					$F274:
+	*** 00050c	83 7e fe 08 		cmp	WORD PTR [bp-2],8	;i
+	*** 000510	7c 03 			jl	$JCC1296
+	*** 000512	e9 30 00 		jmp	$FB276
+					$JCC1296:
+;|***          if (open_info[i].dhandle[j] == dhandle) {
+; Line 317
+	*** 000515	8e 06 00 00 		mov	es,WORD PTR $T20000
+	*** 000519	8b 5e fe 		mov	bx,WORD PTR [bp-2]	;i
+	*** 00051c	8b c3 			mov	ax,bx
+	*** 00051e	d1 e3 			shl	bx,1
+	*** 000520	d1 e3 			shl	bx,1
+	*** 000522	03 d8 			add	bx,ax
+	*** 000524	d1 e3 			shl	bx,1
+	*** 000526	03 d8 			add	bx,ax
+	*** 000528	03 5e fc 		add	bx,WORD PTR [bp-4]	;j
+	*** 00052b	d1 e3 			shl	bx,1
+	*** 00052d	8b 46 08 		mov	ax,WORD PTR [bp+8]	;dhandle
+	*** 000530	26 39 87 06 00 		cmp	WORD PTR es:_open_info[bx+6],ax
+	*** 000535	74 03 			je	$JCC1333
+	*** 000537	e9 08 00 		jmp	$I277
+					$JCC1333:
+;|***             found = 1;
+; Line 318
+	*** 00053a	c7 46 fa 01 00 		mov	WORD PTR [bp-6],1	;found
+;|***             break;
+; Line 319
+	*** 00053f	e9 03 00 		jmp	$FB276
+;|***             }
+; Line 320
+;|***          }
+; Line 321
+					$I277:
+	*** 000542	e9 c4 ff 		jmp	$FC275
+					$FB276:
+;|*** 
+;|***       /* If we found one, clear the device handle there, and git */
+;|***       if (found) {
+; Line 324
+	*** 000545	83 7e fa 00 		cmp	WORD PTR [bp-6],0	;found
+	*** 000549	75 03 			jne	$JCC1353
+	*** 00054b	e9 35 00 		jmp	$I278
+					$JCC1353:
+;|***          open_info[i].dhandle[j] = 0;
+; Line 325
+	*** 00054e	8e 06 00 00 		mov	es,WORD PTR $T20000
+	*** 000552	8b 5e fe 		mov	bx,WORD PTR [bp-2]	;i
+	*** 000555	8b c3 			mov	ax,bx
+	*** 000557	d1 e3 			shl	bx,1
+	*** 000559	d1 e3 			shl	bx,1
+	*** 00055b	03 d8 			add	bx,ax
+	*** 00055d	d1 e3 			shl	bx,1
+	*** 00055f	03 d8 			add	bx,ax
+	*** 000561	03 5e fc 		add	bx,WORD PTR [bp-4]	;j
+	*** 000564	d1 e3 			shl	bx,1
+	*** 000566	26 c7 87 06 00 00 00 	mov	WORD PTR es:_open_info[bx+6],0
+;|***          open_info[i].alloc_count--;
+; Line 326
+	*** 00056d	b8 16 00 		mov	ax,22
+	*** 000570	f7 6e fe 		imul	WORD PTR [bp-2]	;i
+	*** 000573	8b d8 			mov	bx,ax
+	*** 000575	26 ff 8f 04 00 		dec	WORD PTR es:_open_info[bx+4]
+;|***          return(0);
+; Line 327
+	*** 00057a	b8 00 00 		mov	ax,0
+	*** 00057d	e9 12 00 		jmp	$EX264
+;|***          }
+; Line 328
+;|*** 
+;|***       /* Else we didn't find one, so return an error */
+;|***       else       { return(-1); }
+; Line 331
+	*** 000580	e9 06 00 		jmp	$I279
+					$I278:
+	*** 000583	b8 ff ff 		mov	ax,-1
+	*** 000586	e9 09 00 		jmp	$EX264
+					$I279:
+;|*** 
+;|***       }
+; Line 333
+;|*** 
+;|***    /* If we didn't find a matching file handle, return an error */
+;|***    else {
+; Line 336
+	*** 000589	e9 06 00 		jmp	$I280
+					$I272:
+;|***       return(-1);
+; Line 337
+	*** 00058c	b8 ff ff 		mov	ax,-1
+	*** 00058f	e9 00 00 		jmp	$EX264
+;|***       }
+; Line 338
+					$I280:
+;|*** }
+; Line 339
+					$EX264:
+	*** 000592	5e 			pop	si
+	*** 000593	5f 			pop	di
+	*** 000594	8b e5 			mov	sp,bp
+	*** 000596	5d 			pop	bp
+	*** 000597	cb 			ret	
+
+_delete_devh	ENDP
+MAINSEG	ENDS
+END

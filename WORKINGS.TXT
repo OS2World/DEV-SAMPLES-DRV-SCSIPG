@@ -1,0 +1,1077 @@
+Contents
+
+1.0  Introduction
+
+This section talks about the SCSIPGMG package in general - what its intended
+use is, how it came to be, and who the author is.
+
+1.1. What is this package is
+
+This package is a program, device driver and documentation that demonstrates
+and explains how to interface to SCSI devices in OS/2 V2.0 and above.
+Source is included for all software that I wrote and information is provided
+for obtaining source and documentation for many of the OS/2 supplied parts.
+
+1.2. What this package tries to do
+
+This package tries to teach the reader how to interface to SCSI devices in the
+OS/2 environment.  It describes how SCSI works, how SCSI drivers fit into the
+OS/2 architecture, what the interfaces to these drivers are and how to use
+them.  It examines in detail a working device driver that interfaces to the
+provided SCSI drivers and a program that drives SCSI devices.  It goes into
+some detail explaining how SCSI works so the reader will have a better
+understanding of the technical specifications of SCSI devices and adapters.
+
+1.3. What this package doesn't try to do
+
+This package does not attempt to teach the reader how to write OS/2 device
+drivers or programs.  Those topics are covered in much greater detail in
+other sources and by much better teachers.
+
+1.4. Who am I
+
+My name is Dennis Rowe.  I am a Advisory Engineer working for IBM in Boulder,
+Colorado, currently in the IBM Software Manufacturing Company.  I've been
+programming since 1978 and doing OS/2 device drivers since 1988.  Most of my
+work has been for technology investigations or for internal use projects, but
+I have been part of 2 products released for sale :
+
+1. IBM S/370 and S/390 Optical Media Attach/2 - this is a piece of software
+   and hardware for Microchannel machines that makes a PC look like a 3422
+   tape drive to a mainframe.  It gives the mainframe access to any PC storage
+   available to an OS/2 application via the OS/2 filesystems.  I wrote the
+   microcode running in the adapter, the OS/2 device driver and the Control
+   Unit emulation code in the application layer.
+
+2. IBM Portable CDROM - This is a CDROM drive that attaches to a PC via the
+   parallel port, available from IBM to OEMs.  I wrote the 2 OS/2 device
+   drivers and the DOS/Windows device driver.
+
+I can be reached via EMAIL at the following addresses:
+Internet - rowe@bldvma.vnet.ibm.com
+Compuserve - 75140,3710
+BIX - dennisr
+Prodigy - CPMG10A
+Internal IBM - ROWE at BLDVMA
+
+1.5. Why did I do this?
+
+There are really two questions here: why did I do these programs and why did
+I put this package together.
+
+I wrote these programs for my own uses.  One of my current projects (late 1992
+to early 1993) involves driving SCSI devices from a mainframe in support of the
+IBM Software Manufacturing Company's manufacturing processes.  In order to gain
+an understanding of how to interface to the OS/2 SCSI driver system, I wrote
+the GENSCSI driver.  As this driver provides a good generic SCSI interface for
+application programs, I plan to build my application on it.  In order to gain
+an understanding of the specific devices I needed to drive, I wrote the
+SCSITEST program.  It has been invaluable in experimenting with the devices
+themselves.
+
+I put this package together because I saw many questions on Compuserve, BIX
+and on IBM's internal bulletin boards asking how to write OS/2 software to
+drive SCSI attached tape drives and printers and such.  Since I feel that for
+OS/2 to be a big success, there must be lots of information about to program
+it, especially examples, I decided to put this software I had written together
+with a good explanation out in the general public.
+
+This package was done on my own time with no assistance from IBM.  IBM has no
+responsibility for it.  If you have a problem with it, talk to me, not IBM.
+
+1.6. Where you can get more information
+
+More information on OS2 device drivers and SCSI can be found in the following:
+
+OS/2 Device Drivers:
+Writing OS/2 2.0 Device Drivers in C - Steve Mastrianni
+   ISBN - 0-442-01141-5
+
+The IBM OS/2 Device Driver Development Kit (DDK) :
+   Send a fax that includes your your company's name and address and phone
+   numbers (including a FAX number) to 407-982-4218. You will then receive
+   a form from them to the address you have given them.  The DDK is a CDROM
+   with source for many of the device drivers shipped with OS/2, including
+   the OS2SCSI.DMD discussed in this paper, several CDROM device drivers,
+   a hard disk driver and an ASPI driver that interface to SCSI.
+
+In addition, the OS/2 Technical Library (aka the Toolkit) contains the
+Physical Device Driver Reference - the last word in OS/2 device drivers.
+
+SCSI:
+   SCSI - Architecture and Implementation  IBM Redbooks GG24-3507
+   The SCSI Bus - A 2-part series on the history and operation of SCSI
+                  appeared in the February, 1990 and March, 1990 issues of
+                  Byte Magazine.
+
+
+Finally, at the end of the OEMBASE document included in this package is
+another list of useful references.
+
+2. Architecture
+2.1. Where the pieces fit in OS/2
+
+               +--------------+ +----------------+ +--------------+
+               | CDROM Music  | |  SCSITEST Demo | | Other SCSI   |  ....
+               | Player App   | |    Program     | | Application  |
+               +--------------+ +----------------+ +--------------+
+                      |                  |                 |
+                      |                  |                 |
+               +-----------------------------------------------------------+
+               |                                                           |
+               |                                                           |
+               |                       OS/2 KERNEL                         |
+               |                                                           |
+               |                                                           |
+               +-----------------------------------------------------------+
+                      |                  |                 |
+                      |                  |                 |
+               +--------------+ +----------------+ +----------------+
+               | CDROM CLASS  | |  OPTICAL CLASS | | GENSCSI Device |  ....
+               |   DRIVER     | |     DRIVER     | |    DRIVER      |
+               +--------------+ +----------------+ +----------------+
+                      |                  |                 |
+                      |                  |                 |
+               +-----------------------------------------------------------+
+               |                                                           |
+               |             OS2SCSI.DMD SCSI DEVICE MANAGER               |
+               |                                                           |
+               +-----------------------------------------------------------+
+                                             |
+                                             |
+               +-----------------------------------------------------------+
+               |                         SCSI ADD                          |
+               +-----------------------------------------------------------+
+                                             |
+                                             |
+               +-----------------------------------------------------------+
+               |                        SCSI ADAPTER                       |
+               +-----------------------------------------------------------+
+                      |                 |                  |
+                      |                 |                  |
+               +--------------+ +----------------+ +--------------+
+               | CDROM SCSI   | |  OPTICAL SCSI  | | OTHER SCSI   |  ....
+               |    DEVICE    | |     DEVICE     | |    DEVICE    |
+               +--------------+ +----------------+ +--------------+
+
+With V2, OS/2 has adopted a layered approach to driving SCSI devices.  There
+are 3 layers of drivers - the Adapter Device Driver (.ADD), the Device Manager
+Driver (.DMD), and the Class Driver (.SYS).  Each has its specific task.
+In this case, we are discussing a specific Device manager - OS2SCSI.DMD.
+
+The .ADD's main job is to direct given SCSI commands to a device at a given
+device.  It doesn't concern itself with what the commands mean or whether the
+device will accept the command or what state the device is in, or even what
+the device is.  It just tries to send the command and reports the results.
+Its other main job is to tell anybody who asks what types of devices it has
+attached to each of its supported adapters and what the capabilities of each
+adapter is.  This lets the caller (.DMD) know how to send commands.  It is up
+to the manufacturer of an adapter to provide an .ADD for their adapter.
+
+The OS2SCSI.DMD's job is to provide a single interface to all the SCSI devices
+in the system that are not reserved by another .DMD. It provides facilities
+for reserving devices, dealing with adapter caches, reading and setting device
+capabilities and issuing commands to the device through a single interface.
+That interface is described in detail in the portion of the OEMBASE.TXT file
+included in this package.  This document will describe how to use the interface
+and give examples.
+
+The Class driver's job is to provide a single interface to all the SCSI devices
+in the system of a particular type (CDROM, tape, etc).  It maintains device
+state information, translates high level commands (READ, SEEK, WRITE) into the
+command specific to the particular device.  This is the layer that knows
+what command each device understands and how to interpret each device's
+particular error codes.
+
+This architecture is not, however, rigid.  OS/2 2.1 puts it's CDROM class
+drivers at the same level as the device managers.  In this case, it is one of
+those other .DMD's mentioned above.
+
+2.2. OS2SCSI.DMD
+
+IBM supplies several DMDs with OS/2.  We are interested in one of them -
+OS2SCSI.DMD.  This is a generic device manager.  Other device managers
+will request that a particular device be allocated to them and will translate
+the READ/WRITE/SEEK/etc. commands into specific SCSI commands designed for
+the particular device and pass the command to OS2SCSI.DMD for execution.
+When OS2SCSI.DMD returns, the driver will examine the results and translate
+them into the proper response for OS/2.
+
+The advantage of this system is that the class drivers do not have to know
+how to get a SCSI command executed or what SCSI ID their device is set to.
+The also don't have to deal with details like supporting multiple SCSI adapters
+or different SCSI adapters.  They just reserve the device, issue commands and
+free the device when done.
+
+2.3. GENSCSI.SYS
+
+The problem, from an application point of view, with OS2SCSI.DMD is that it
+was designed to be called by another device driver.  It expects physical
+addresses in some of the control blocks.  It also expects some virtual
+addresses to be valid at interrupt time.  This requires that the address be a
+GDT based address.  Applications cannot supply physical addresses or GDT
+based virtual addresses, only a device driver can do that.
+
+To solve these problems I wrote GENSCSI.SYS.  Its job is to accept the same
+commands that OS2SCSI.DMD accepts, but it knows that they are coming from an
+application.  It builds a new request packet, converting virtual addresses to
+physical addresses where needed and converting LDT based pointers to GDT
+based pointers in other cases.  It then passes this new command to OS2SCSI.DMD
+and waits for a response.  When the response returns, it transfers the results
+to the original request packet and returns to the caller.  In this way, it
+provides an interface to OS2SCSI.DMD for applications.
+
+
+2.4. SCSITEST.EXE
+
+SCSITEST.EXE is a program that lets you manually issue commands to OS2SCSI.DMD
+and to SCSI devices via GENSCSI.SYS.  With this in mind, it provides 2
+functions:  it allows you to explore how a SCSI device works and it provides
+sample code for interfacing to GENSCSI.SYS, OS2SCSI.DMD and SCSI devices.
+
+
+3.       SCSI
+
+SCSI stands for Small Computer Systems Interface.  It is a standardized
+interface through which computers may communicate with a large variety of
+peripherals such as disk drives, tape drives, printers and plotters.
+
+3.1.     How SCSI works
+
+SCSI is composed of an 8-bit parallel bus and a number of control signals.
+Its operation is basically a command oriented operation.  One device on the
+bus sends a command to another device and there may be a transfer of data
+involved.  It is a peer-to-peer connection.  Any device may send a command
+to any other device, in theory.  In practice, though, it tends to be a
+master-slave arrangement with the CPU doing all the commands and the
+peripherals only responding to commands.
+
+SCSI originally evolved out of the S/360 Channel - introduced in 1964.  You
+can see many similarities - selection/reselection, command phase, data
+transfer, and status phase.  There have been several major changes, though.
+The peer-to-peer arrangement is different; the channel is strictly master-
+slave.  The command has been expanded from 1 byte to up to 12 bytes.  There
+is provision for disconnection before any data is transferred, where in the
+channel that was only allowed in byte multiplexor mode - the slowest mode.
+
+3.1.1.   The Basic Sequence
+
+There are 7 basic phases to the SCSI bus:
+   1. Bus Free phase - In this phase there is no operation occurring on the
+                      bus.  Any device is available for any device to use.
+
+   2. Arbitration phase - In this phase one or more devices is attempting
+                      to gain control of the bus.
+
+   3. Selection/Reselection phase - In this phase, the initiator is attempting
+                      to start communication with the target.
+
+   4. Command Phase - This is where the command is sent from the initiator to
+                      the target.
+
+   5. Data In/Out Phase - This is when data transfer takes place.
+
+   6. Status Phase - In this phase the target sends a status byte to the
+                      initiator indication the completion status of the
+                      command.
+
+   7. Message Phase - Here, the target and initiator MAY pass messages to each
+                      other describing the SCSI bus and how they will
+                      communicate.
+
+3.2.   How the IBM Microchannel SCSI cards work
+
+The IBM Microchannel SCSI cards are really small processors that have access
+to the CPU's memory.  You essentially point them at a block of memory that
+holds their commands and say 'Go!'  When they are done, they interrupt you
+and you examine the results.
+
+3.2.1. Bus Masters
+
+A bus master has the ability to read and write memory or I/O on its own,
+acting like another CPU in the system.  The IBM SCSI adapters are such
+adapters.  All it takes to set one off working on one or more SCSI commands
+is to point it at the physical address of its chain of control blocks (SCBs)
+and tell it to go.  It will examine the memory, initiate the SCSI operations,
+store the data and status in the requested memory and interrupt the CPU when
+done.  OS2SCSI's job is to pass these requests on to the adapter device driver
+who sends it out the card to the device.
+
+3.2.2. SCBs
+
+For a full description of the SCBs, see the IBM Technical Reference for your
+particular IBM SCSI adapter.  Or, if your adapter supports the IBM SCB
+interface, it will be described in the programming documentation for that
+adapter.
+
+Generally, an SCB contains the SCSI command to be executed, pointers to the
+data buffer into or out of which the data travels, a pointer to the sense
+data (if any) that is read from the device in case of an error, and some
+control information.  The control information includes things like how big is
+the data buffer, where the Termination Status Block is and a whole bunch of
+bits describing things like:
+   - Is the command a READ or a WRITE : which way is the buffer data going?
+   - Should the TSB be set always or only on error
+   - Should the adapter retry on error?
+   - Is the system buffer address a pointer to a scatter/gather list?
+   - Is there another SCB chained after this one?
+   - Should we stop chaining on error?
+
+Finally, the IBM SCSI adapters are smart enough to know how to do some standard
+SCSI commands without the explicit SCSI command being given to it.  Some of
+these commands are Sense, Read, Write, Inquiry, Read Capacity, Mode Select,
+and Mode Sense.  These commands are built into the first word of the SCB.
+
+3.2.3. CDBs
+
+Command Descriptor Blocks (CDBs) are the actual blocks of bytes that make
+up a command.  For instance, the sense command (which is the IBM SCSI cards
+have a special SCB to perform) can also be done with the 'Send Other SCSI
+Command SCB' - see the next section for details on this SCB.  The sense CDB
+is 6 bytes long composed of the following:
+
+   Byte 0 - 0x03
+   Byte 1 - 0x00
+   Byte 2 - 0x00
+   Byte 3 - 0x00
+   Byte 4 - Number of bytes to transfer - max = 98
+   Byte 5 - 0x00
+
+After this command is complete, if it succeeded, the data buffer will hold
+the sense data from the device.
+
+Another example is the Inquiry command.  This command is also 6 bytes long
+composed of the following:
+
+   Byte 0 - 0x12
+   Byte 1 - 0x00
+   Byte 2 - 0x00
+   Byte 3 - 0x00
+   Byte 4 - Number of bytes to transfer - max = 255
+   Byte 5 - 0x00
+
+After this command is complete, if it succeeded, the data buffer will hold
+the Inquiry data from the device.  This data holds information as the device
+type (CDROM, hard disk, printer, tape, etc), if the media is removable, what
+the manufacturer's name and model is, and what standards the device conforms
+to.
+
+You can find the details of the CDBs for your device from the manufacturer
+or in the technical reference for the particular device.
+
+3.2.4. What if you don't have an IBM Microchannel SCSI card.
+
+If you don't have a Microchannel machine with an IBM SCSI card, don't worry,
+OS/2 is set up to handle you, if you have an Adapter Device Driver (ADD) for
+your card.  OS2SCSI will query the ADD and convert the commands GENSCSI sends
+it to the proper form for the card.  To make sure, you could only use the
+Send Other command for all SCSI commands to be sent to the device.  The SCB
+to use is:
+
+Word  0 - 0x245F
+Word  1 - 0x6600 (write) or 0xD600 (read)
+Word  2 - High byte = 0, Low byte = SCSI command length
+Word  3 - 0x0000 (reserved)
+Word  4 - System Buffer Address Low Word
+Word  5 - System Buffer Address High Word
+Word  6 - System Buffer Byte Count Low Word
+Word  7 - System Buffer Byte Count High Word
+Word  8 - Termination Status Block Address Low Word
+Word  9 - Termination Status Block Address High Word
+Word 10 - 0x0000 Optional SCB Chain Address Low Word
+Word 11 - 0x0000 Optional SCB Chain Address High Word
+Word 12 - SCSI Command bytes 0,1     --+
+Word 13 - SCSI Command bytes 2,3       |
+Word 14 - SCSI Command bytes 4,5       |__ This is where the CDB goes
+Word 15 - SCSI Command bytes 6,7       |   (see discussion on CDBs above)
+Word 16 - SCSI Command bytes 8,9       |
+Word 17 - SCSI Command bytes 10,11   --+
+
+The system buffer address is the 16:16 address of the data buffer.  The
+System Buffer byte count is just that : how big is the data buffer.  The
+TSB address is the 16:16 address of the TSB.  Set word 1 to 0x6600 if the
+transfer of data is from the device to the CPU (read).  If it is from the
+CPU to the SCSI device, set word 1 to 0xD600 (write).
+
+This block does not chain SCBs.  To do that, you would turn on the low
+order bit of word 1 and fill the SCB chain address with the 16:16 address.
+Beware that GENSCSI.SYS does not support this.  It will not convert the
+SCB chain address to a GDT based pointer and it will not chase down the
+SCB chain to convert virtual addresses to physical.  If you want to chain
+SCSI commands, you need to write your own device driver to interface to
+OS2SCSI.
+
+SCSITEST is a good vehicle to determine what features your adapter support.
+
+4.     SCSI.SYS, OS2SCSI.DMD, etc.
+
+The idea of the layered device driver architecture in OS/2 V2 is that higher
+level drivers, especially those dealing with specific devices on standard
+busses (SCSI, IDE, ESDI, etc) do not have to concern themselves with the
+details of driving the adapter.  It also provides for the management of the
+adapter at a single point.  These drivers are called Adapter Device Drivers
+(.ADDs).  Their job is to provide a standard interface to each device
+attached to each of their supported adapters.
+
+In the case of SCSI, however, there is another layer of abstraction available.
+The problem is that some SCSI cards are true bus masters, with the intelligence
+to do scatter/gather (able to work with physically scattered pages of memory),
+command chaining (able to execute more than one SCSI command in sequence), and
+error handling (automatic request of Sense data from the device), while other
+SCSI adapters are really simple.  All these simple adapters can do is execute
+the command, and only with massive software assist for the phase
+interpretation.  To smooth out these massive differences between ADDs, the
+OS2SCSI device manager is provided by OS/2.  This driver determines the best
+way to call the ADD.  It may split a chain of commands into individual commands
+and hand them to the ADD one at a time.  It may do the sense command if the
+adapter doesn't.  In short, it provides much of the intelligence of a smart
+adapter to a dumb adapter.  It makes all adapters look smart.
+
+Source code for the OS2SCSI.DMD driver can be found in the DDK.
+
+4.1.   Interface Big Picture
+
+The interface to OS2SCSI.DMD is through IOCtl request packets handed to it via
+an Inter-device Driver Call.  This section will discuss this interface in more
+detail.
+
+4.1.1. What major functions it performs
+
+The major functions provided by OS2SCSI.DMD are:
+   o Device Allocate/Deallocate
+   o Adapter Cache Control
+   o Set/Read some device parameters
+   o Reset/Initialization Operations
+   o SCSI Command Processing/Aborting
+
+4.1.2. How you talk to it in general terms
+
+The way you communicate with OS2SCSI.DMD is through an IDC interface.  Your
+device driver builds an IOCtl request packet and passes it to OS2SCSI by
+calling the IDC entry point.  After the command is complete, OS2SCSI sets the
+status field of the request packet and returns control to your device driver.
+It is up to you to examine the status field and possibly the Sense and TSB
+buffers to determine how the command went, what errors occurred and what
+recovery, if any, needs to be done.
+
+4.1.3. Basic listing of commands and what they do
+
+OS2SCSI provides 12 commands.  These are, with a short explanation of their
+function:
+  1. Read Device Parameters       - Returns information about a particular
+                                    adapter and LUN (Logical Unit).
+
+  2. Reset/Initialization         - This function sends a reset message to a
+                                    particular device.
+
+  3. Enable Adapter Cache         - This function turns on the adapter cache
+                                    for all subsequent commands to a given
+                                    device.
+
+  4. Disable Adapter Cache        - This function turns off the adapter cache
+                                    for commands to this device.
+
+  5. Return Adapter Cache Status  - This function tells if commands to this
+                                    device are cached.
+
+  6. Set Device Timeout           - Sets the timeout value for this device.
+
+  7. Read Device Timeout          - Returns the current timeout value for this
+                                    device.
+
+  8. Transfer SCB                 - Causes a chain of 1 or more SCBs to be sent
+                                    to the adapter.
+
+  9. Deallocate Device            - Reserves a device for this caller's use.
+
+ 10. Allocate Device              - Returns an allocated device to the pool
+                                    of free devices.
+
+ 11. Return Peripheral Type Count - Returns how many devices of a particular
+                                    type have been detected.
+
+ 12. Abort                        - Stops a command in progress.
+
+The details of each command are given in the OEMBASE.TXT file supplied in this
+package.
+
+4.3.   Getting in contact
+
+During initialization, your device driver needs to do two things:
+   1. It needs to get the Interdevice Driver Call address of OS2SCSI.
+   2. It needs to get a file handle for future calls to OS2SCSI.
+
+4.3.1. Calling OS2SCSI
+
+To call OS2SCSI, your device driver will use the IDC entry point.  It gets
+the address of this entry point via the AttachDD Device Helper function in
+OS/2.  What comes back is a CS:IP that will be used as the target of an
+indirect call and the value to be set in DS before making that call.  This
+value is the data segment of OS2SCSI.  Also, before calling, your DD will
+set ES:BX to point at the request packet you are passing to OS2SCSI.
+
+If this looks familiar, it is.  Essentially, you are doing the function of
+OS/2 when it calls OS2SCSI with an IOCtl request.  The IDC entry point in
+OS2SCSI winds up calling the Strategy entry point.  The only difference is
+that some functions are allowed from OS/2 that are not allowed from another
+device driver via IDC, and some operations are handled a little differently.
+
+To get the IDC address of OS2SCSI, your device driver should do a AttachDD
+command at INIT time with the name of "SCSI-02$".
+
+4.3.2. You need a handle
+
+When your device driver passes commands to OS2SCSI, it needs a number to fill
+in the System File Number field of the IOCtl request packet.  It gets this
+handle by doing a DosOpen on the name "SCSI=02$" at INIT time.  Some of the
+flags that need to be set are:
+   o Open Mode = 0x0012 - Read/Write access
+   o Open Flag = 0x0001 - Open the device if it exists, fail if it doesn't
+   o Attribute = 0x0000 - Normal File
+
+This operation needs to be done at INIT time as the DosOpen function is not
+available at any other time.
+
+4.4.   Sending commands
+
+Getting your device driver to use OS2SCSI is fairly easy.  At INIT time, you
+call the AttachDD device helper to get the IDC entry point.  Then, you do a
+DosOpen to get a handle.  You are now ready to send commands and work with
+your devices.
+
+4.4.1  Are there any of my devices?
+
+The next step is to find out if there are any of your devices there.  This is
+done via the Return Peripheral Type Count command.  If you put, for example, a
+5 in the Peripheral type field of the buffer pointed to by the Parameter
+pointer field of the request packet and set the removable flag in the device
+flags field, you will get a count of the CD-ROM drives with removable media
+capability that were detected at boot time.  Using this command, you can
+determine if any of your supported devices exist.
+
+4.4.2  Reserving the device
+
+After determining that there are some of your devices out there, you must then
+get a device handle for each device that you want to use.  This handle will be
+used to indicate which device you want to issue a command to later.  You do
+this with the Allocate Device command.
+
+4.4.3  Sending commands to the device
+
+The Transfer SCB command is the heart of OS2SCSI.  It is the IOCtl that you
+use to send SCSI commands to devices.  Buried in the Subsystem Control Block
+(SCB) is the actual 6 to 12 byte SCSI command that is sent to the device,
+along with a pointer to the buffer where data is to be transferred to or from.
+
+Commands such as Read, Write, Seek, Rewind (for a tape drive), Play Audio (for
+a CDROM reader), etc. are sent to the device with this command.  Included
+in the command is a sense buffer that will may be filled in if an error
+occurs.  The return code from this IOCtl will indicate if there is valid sense
+data in the buffer.
+
+4.4.4  Finishing with the device
+
+After you have finished with a device, you return it to the pool of available
+devices with the Deallocate Device command.  Some drivers, such as CDROM device
+drivers will never free the device, while others, like printer or tape drivers
+probably will.
+
+4.4.5  Miscellaneous stuff
+
+Finally, there are commands for determining if there is a cache in the adapter
+and for determining and chaining the caching controls.  There are commands to
+send reset commands and abort commands to a particular device as well as to
+read and set the timeout values for any device.
+
+4.5.   Errors
+
+Whenever an error happens, it will be reflected in the status field of the
+request packet.  An examination of the bits will tell if there is sense data
+available (for Transfer SCB commands).
+
+4.6.   Things to watch out for
+
+The biggest thing that you have to watch out for is that most of the virtual
+addresses passed to OS2SCSI must be GDT based addresses, especially those used
+in the Transfer SCB command.  The reason for this is that OS2SCSI must be able
+to access the buffers pointed to by these addresses at Interrupt time.  The
+only addresses you can depend on at this time are GDT based addresses.
+
+The second thing to watch out for is that you lock any buffers whose address
+is passed by physical address.
+
+5.       GENSCSI.SYS
+
+This section discusses the device driver GENSCSI.SYS.  It talks about what
+function the device driver performs, how to interface to it, and how it works.
+It includes a discussion of the source code for GENSCSI.SYS which is a part
+of this package.
+
+5.1.     Interface Big Picture
+
+The basic function of GENSCSI.SYS is to provide applications with an interface
+to OS2SCSI.DMD.  It only answers 4 commands: Open, Close, IOCtl, and Init.
+All others cause an Invalid Command error.
+
+5.1.1.   What it does
+
+GENSCSI accepts IOCtl commands in the same format that OS2SCSI does, except
+GENSCSI expects all addresses to be ring 3 addresses while OS2SCSI expects
+them to be ring 0 addresses, physical addresses or scatter/gather lists.
+GENSCSI will convert the ring 3 addresses to the proper form and pass the
+command on to OS2SCSI.  When OS2SCSI is done with the command, it returns
+the results back to GENSCSI who passes it back to the application.
+
+5.1.2.   How you talk to it in general terms
+
+The basic steps are:
+
+1. DosOpen on $GENSCSI.  This will get you a handle to talk to GENSCSI.
+
+2. DosDevIOtls following the OEMBASE.TXT file included in this package to
+   query, allocate, command and deallocate SCSI devices.  This is where your
+   work is done.
+
+3. DosClose with the handle received in step 1.
+
+5.2.     A sample sequence
+
+A simple sequence: locate a CDROM drive, see if it has a disk loaded and read
+the first DATA sector to determine if the CD is ISO9660 or something else would
+look like this:
+
+   Get access to the device driver via DosOpen
+
+   See if there are any CDROM drives via Return Peripheral Type Count
+
+   If there aren't any CDROM drives, quit here
+
+   Get a device handle for the next available CDROM drive via Allocate Device
+
+   Ask the CDROM for its capacity by doing a Read Device Capacity SCSI command
+       that is sent using the Transfer SCB IOCtl.
+   If the Read Device Capacity command failed, you would have to determine
+       why.  By examining the sense data returned, you could learn if it was
+       because media had been changed or because the device has been reset
+       since the last operation, or for some other reason.  If it was one of
+       the first two, retrying the command is in order.  If it is some other
+       reason, you would quit here.
+
+   If the Read Device Capacity succeeded, you would next do a Read Sector
+       command, once again via Transfer SCB, with the read starting at sector
+       16 and going for 1 2048 byte sector.
+   If the read fails, it can be for several reasons, all of which lead to the
+       conclusion that the disk is not ISO9660.
+
+   If the read was successful, examination of the data returned will allow
+      you to tell if the disk is ISO9660 or not.  See the ISO9660 spec for
+      more detail.
+
+   After the determination, release the drive via the Deallocate IOCtl.
+
+   We are all finished, do a DosClose on the file handle returned from DosOpen.
+
+
+5.3.     Construction - a look at the source
+5.3.1.   STRATEGY.C
+
+There is one function in STRATEGY.C: strategy_c().  It does 2 functions: call
+the proper command handler and set the status in the request packet.  If the
+command is not one of the supported 4, it sets the request packet status to
+Invalid Command.
+
+Note that the device helper function DevDone is not called if the command is
+INIT.  This is because DevDone is only valid at kernel and interrupt times,
+not init time.
+
+5.3.2.   INIT.C
+
+INIT.C performs the initialize command (surprise!).  The steps are fairly
+straightforward:
+
+1. Save the devhelper address away
+
+2. Set the values in the request packet for a failure.  This way, we can
+   just return if we really do get a failure at any time along the line.  If
+   we end up succeeding, we'll set the proper values.
+
+3. Construct the name of the message file from the line in CONFIG.SYS.
+
+4. Display the commercial describing what we are.
+
+5. Initialize the open array.
+
+6. Do the SCSI initialization - make contact with OS2SCSI.DMD get a file
+   handle.
+
+7. Set the values in the request packet for a successful completion.
+
+8. Return SUCCESS to the caller.
+
+5.3.3.   IOCTL.C
+
+Once again, this function is very simple.  We filter off 1 IOCtl command:
+Category 0x81, function 0x40.  This command is our internal breakpoint command.
+It allows us to execute an INT 3 machine instruction on command.  The INT 3
+instruction is a breakpoint to most debuggers, including the kernel debugger.
+This way, we can, on command, cause the debugger to be invoked in the
+context of our device driver so we can set other breakpoints.
+
+All other IOCtl commands are passed on to the SCSI device driver caller.
+
+5.3.4.   SCSI.C
+
+This is the heart of the GENSCSI device driver.  It converts the addresses in
+the IOCtl packets to the proper form for OS2SCSI, passes the command along
+and stores the results in the original request packet.
+
+There are 4 functions in this file:
+   1. scsi_init()    - Makes the connection with OS2SCSI.
+   2. call_scsi()    - Handles all commands to OS2SCSI except the Transfer SCB
+                       command.
+   3. transfer_scb() - Handles the Transfer SCB IOCtl command.
+   4. free_dhand()   - Issues a Deallocate Device for a given device handle.
+
+5.3.4.1  scsi_init()
+
+There are three steps done in scsi_init().
+  1. Allocate the GDT selectors that the device driver will need during normal
+     operation.  There are 4 needed.
+
+  2. Acquire the IDC values for OS2SCSI.  This is done through the AttachDD
+     device helper function.
+
+  3. Acquire a file handle to OS2SCSI.  This is done through the DosOpen system
+     call.  Note that this must be done at INIT time by a device driver.  It
+     cannot be done at kernel time and it cannot be done by an ADD or DMD as
+     this service has not been loaded yet.
+
+If any of these steps fail, we return General Failure to the caller.
+Otherwise, we return OK.
+
+5.3.4.2  call_scsi()
+
+The steps (along with their line numbers in scsi.c) follow:
+
+1.  Filter off the obvious unsupported IOCtl commands.  If the category isn't
+    0x80, return an Invalid Command error.  (line 233)
+
+2.  Handle the Transfer SCB command separately.  It has several more addresses
+    to convert from LDT based to GDT based, as well as some physical addresses
+    and a scatter/gather list indicator to set.  (line 241)
+
+3.  If this is an Allocate Device request, we need to make sure that there is
+    enough room in the open array to store the device handle.  We need to keep
+    the handle around so that if the application ends without deallocating the
+    handle, we can do it.  (line 246)
+
+4.  Create a new request packet to be passed to OS2SCSI.DMD and copy all the
+    values from the original request packet except the file handle and the parm
+    and data buffer pointers into this new packet.  The new request packet is
+    created with the AllocReqPacket Device Helper.  (line 258)
+
+5.  Convert the parm buffer pointer from an LDT based pointer to a GDT based
+    pointer.  This is done because OS2SCSI may have to access the buffer at
+    interrupt time - when the current LDT is not valid.  The only virtual
+    addresses that are valid are GDT based ones.  This conversion has 3 steps:
+    Lock the buffer, determine the physical address of the buffer and create
+    a GDT pointer to the physical address.  (line 279)
+
+6.  Do the same operation with the data buffer pointer, for the same reason.
+    (line 285)
+
+7.  Set the file handle to OS2SCSI we got during scsi_init() into the system
+    file handle field of the new request packet.  (line 291)
+
+8.  Call OS2SCSI through the IDC entry point, pointing ES:BX at the newly
+    created request packet before calling.  (line 294)
+
+9.  On return from OS2SCSI, the new request packet's status field has the
+    completion status of the operation.  It needs to be copied to the original
+    request packet, along with the parm buffer and data buffer lengths.
+    (line 297)
+
+10. The allocated request packet is freed.  (line 302)
+
+11. If the request was an Allocate or Deallocate Device and it was successful,
+    the open array needs to be updated with the device handle either added to
+    or removed from the array.  (line 305)
+
+12. Finally, we unlock the parm and data buffers and return the completion
+    status to the caller.  (line 325)
+
+5.3.4.3  transfer_scb()
+
+1.  This function does the same thing as call_scsi(), except, since it is
+    working on a transfer SCB request packet, it has a few more addresses to
+    deal with.  They are:
+
+    1. The SCB header pointer in the transfer SCB control block.  This pointer
+       is converted from an LDT based virtual address to a GDT based address,
+       just like the parm and data pointers.  in addition, we save the original
+       LDT based address for replacement after the operation is done.
+       (line 397)
+
+    2. We store the physical address of the SCB in the Transfer SCB control
+       block (line 409)
+
+    3. The TSB pointer in the SCB itself is handled just like the SCB Header
+       pointer in (1). line (413).
+
+    4. Next, we convert the System Buffer address in the SCB from a virtual
+       address to a physical one, saving the original virtual address away.
+       (line 419)
+
+    5. Finally, we deal with the idea that the system buffer may need to be
+       represented as a page list (or scatter/gather list) rather than a
+       single physical address.  If the buffer is big enough, it may be
+       scattered over several non-contiguous pages of physical memory.  If
+       that is the case, we need to tell OS2SCSI (who, in turn, will tell
+       the SCSI adapter ADD) that the buffer is a page list.  This
+       determination is done by converting the virtual address to a page list
+       and seeing if there is more than 1 block of pages.  If there is, we
+       have a scatter/gather list; if not, we have a single block of contiguous
+       pages and can use the physical address.  (line 424)
+
+2. For the next 3 steps, the operation is the same as call_scsi() - call
+   OS2SCSI, transfer the results to the original request packet and free the
+   allocated request packet.  (line 465)
+
+3. Next, we replace the virtual addresses that we changed to physical or GDT
+   based pointers.  (line 476)
+
+4. As in call_scsi(), we now unlock all the locked buffers and return the
+   request packet status to the caller.
+
+5.3.5.   OPENCLOS
+
+The functions in OPENCLOS.C manage the open array.  The open array is an array
+of records describing all the applications that have issued a DosOpen call to
+the device driver and the devices that they have allocated.  There is one
+readon for keeping this information: if an application fails or for any reason
+ends without deallocating any devices it has allocated, those devices will not
+be available for any other application to use until the system has been
+restarted.  To prevent this, GENSCSI will issue a Deallocate command to OS2SCSI
+for any devices owned by an ending application.
+
+The open array consists of an array of 50 records, one for each possible open
+call.  Each handle can have a maximum of 8 devices allocated.  These numbers
+are arbitrary and can be changed with no ill effect (until the total size of
+the array begins to approach 64K bytes).
+
+There are functions in OPENCLOS.C to initialize the array, determine how many
+free device handle slots are available to a given file handle, to set a device
+handle into the array and to remove a device handle from the array.
+
+Every time a new file handle is received, it is recorded in the array.  Each
+device allocate and deallocate associated with that file handle that is
+successful is also recorded in the array.  If a close on a file handle is
+received and it still has outstanding device allocates, the devices will
+be freed by GENSCSI before the close is completed.
+
+5.3.6.   Others
+
+The rest of the source consists of utility functions to help the device driver
+do its work.  There are routines to call various devhelper functions, functions
+to handle a message file and display messages at INIT time.  There area
+functions to parse the parameters in CONFIG.SYS and assembler functions to
+arrange the segments to build a proper OS/2 device driver.
+
+5.4.     Putting the pieces together - Following a request through the driver
+
+This section will show how a request is processed in GENSCSI.SYS.
+
+5.4.1.   Strategy
+
+A request is received by the strategy function.  What happens, from the
+device driver's point of view is that it is entered at the address pointed
+to by the strategy pointer in the device header with ES:BX pointing to the
+request packet.  The Strategy code immediately pushes the pointer onto the
+stack and calls the C code which will do all the work.
+
+The C function strategy_c() found in the file STRATEGY.C is this function.
+It examines the command in the request packet and calls the proper command
+handler - either INIT, OPEN, CLOSE, or IOCTL.  If it isn't one of these 4,
+we set Invalid Command in the request packet status and return the request
+to OS/2.
+
+5.4.2.   IOCTL
+
+Assuming that the request was an IOCTL, the IOCtl command processor, ioctl()
+in IOCTL.C, looks to see if it is our internal test function (category 0x81,
+function 0x40).  If it isn't, it passes the command to the SCSI command
+handler who will convert the addresses and pass it on to OS2SCSI.
+
+5.4.3.   SCSI
+
+The SCSI command handler (call_scsi() in SCSI.C) handles all but the Transfer
+SCB command.  The first step is to filter off the obviously incorrect
+commands: those whose category is not 0x80.  These are returned with a status
+of invalid command.  We then filter off the Transfer SCB commands and pass
+them to transfer_scb(), also located in SCSI.C.  This is because the Transfer
+SCB processing is different enough to warrant its own function.
+
+The next step is to check if we are going to allow the command.  If it is an
+Allocate Device command, we need to have enough space to hold the device
+handle if the allocate is successful.  If we do have the space, the command
+proceeds.  It not, it is returned now with an appropriate error code.
+
+Now that we are going to handle the command, the first thing to do is to
+construct a new request packet.  We allocate one and copy all the fields
+from the original packet except the file handle and the parm and data buffer
+pointers.  Next we need to convert the Ring 3 parm and datat buffer
+virtual addresses to Ring 0 virtual addresses.  Each buffer is locked down,
+its physical address extracted and a GDT based pointer set to point at the
+same physical address.  These pointers are stored in the new request packet
+along with the file handle received from the DosOpen we did at INIT time.
+
+The handling of the Transfer SCB command is similar except there are several
+more addresses to be converted from Ring 3 to Ring 0 along with a couple of
+Ring 3 virtual address to physical address conversions.
+
+Next, we hand the newly built request packet to OS2SCSI.DMD through the IDC
+call.
+
+ON return from OS2SCSI, we transfer the request packet status from the newly
+created one to the original received from OS/2, we unlock the buffers and
+free the allocated request packet.
+
+5.4.4.   Back to OS/2
+
+On return from call_scsi(), the device driver tells OS/2 that the request is
+finished and returns to OS/2.  The request is finished.
+
+5.5.     What it doesn't do - Watch out!
+
+There are several things to watch out for with this device driver.  They are
+generally related to the fact that this driver was written for my own use on
+IBM Microchannel machines, so I know what to avoid.
+
+The first thing to watch out for is that GENSCSI doesn't handle chained
+requests.  OS2SCSI and the IBM SCSI cards will handle a list of SCSI commands
+automatically.  The problem is that GENSCSI will only convert the addresses
+in one SCB.  This means that your application cannot pass chained commands to
+GENSCSI for execution.  You have to do them one at a time.
+
+The second thing to watch out for is that GENSCSI doesn't verify that the
+pointers you gave it are valid.  If the pointer you give is invalid, you run
+the risk of stepping on system memory or getting a protection exception in
+the kernel - either of which will crash the system in such a way as to force
+a power off to recover.  Since I wrote this driver to be used for poking around
+the system, I didn't worry too much about crashing it.  If you are going to
+use it in more of a production environment, I would recommend putting the
+verify operations in.
+
+The last thing to note is that it expects all virtual addresses to be 16:16
+rather than 0:32.  It wouldn't be too hard to create another set of IOCTLs
+that handle 0:32 addresses as well.  But, since it does want 16:16 addresses,
+all pointers in the application space must be declared as _Sys16 if you use
+C-Set/2 as your compiler.
+
+6.       SCSITEST
+6.1.     The Big Picture
+
+SCSITEST is a program that lets the user issue commands through GENSCSI.SYS
+to OS2SCSI.DMD or to a particular SCSI device.
+
+6.1.1.   What does it do
+
+SCSITEST lets the user issue a set of standard commands to OS2SCSI or to
+build almost any SCSI command and send it to a pre-defined SCSI device.  It
+operates by accepting commands from the user and then asking for more data.
+Afer it has gathered all the data it needs, it eitehr does the operation or
+it builds the command packets and sends them to OS2SCSI through GENSCSI.
+
+Some of the operations SCSITEST will do are:
+
+   Allocate/Deallocate a device
+   Read or Write a block up to 64K from/to a device
+   Query a device for its capacity or device type/manufacturer
+   Reset a device
+   Display the latest sense data in hex or interpreted form
+   Display the latest Termination Status Block in hex or interpreted form
+   Write the data buffer to file in binary or printable hex form
+   Issue any SCSI command at a device
+   Reset a SCSI device
+
+6.1.2.   How do you use it
+
+If the program successfully gets access to the GENSCSI device driver, it
+displays all the possible commands.  Type in one of the commands and the
+program will prompt you for the rest fo the information needed to perform the
+requested operation.
+
+Generally, the first step is to either request a count of the devices of
+interest (count command) or, if you know that one is available, to allocate
+the device (alloc).
+
+Next, you issue the commands of interest (read, write, inq, capac, etc) until
+you are finished with this particular device.  If you wish to use other
+devices, you first free the currently allocated device (free) and allocate
+the next one.
+
+When you exit the program (quit), any allocated devices are automatically
+freed - if not by the program then by GENSCSI iteslf.
+
+6.2.     A quick look at the source
+
+The source for SCSITEST is fairly straightforward.  The main routine is a
+simple loop, waiting for input from STDIN.  When it gets it, it determines
+what command is requested and, if it is a valid command, calls the proper
+function to execute the command.  If the command is not valid, it displays
+the list of valid commands.  On return from the function that executes the
+command, it goes back to waiting for another command.
+
+The commands are broken into 2 basic classes:  those that interface through
+GENSCSI to OS2SCSI and those which display or manipulate the data received
+or to be sent to OS2SCSI.
+
+The commands to GENSCSI/OS2SCSI are all very simple - ask the user for
+any information that we don't already have or that isn't canned in, build the
+IOCtl parm and data buffers and issue the IOCtl.  When the IOCtl returns,
+tell how it went and display the information requested; if there was any.
+
+The data manipulation commands generally fall into 2 groups - those that
+display the data and those which write it to disk.  The displayers can
+display it in raw form (ususally just the hex bytes) or interpreted form.
+The data writers will write the data either in a printable hex format or
+straight binary which is just a raw dump of the buffer to the file.
+
+6.3.     Limitations
+
+The biggest limitation of SCSITEST is that it isn't very defensively
+programmed.  If you give it a read command that will result in a buffer bigger
+than 64K, it will fail.  If you say to display the current data buffer via
+the p_data command and there is no buffer, it will crash with a protection
+exception.
+
+The next limitation is that its user interface is fairly crude and limited.
+It doesn't allow you to specify the name of the file when you write the buffer
+to disk.  Its biggest user interface limitation is that it doesn't easily let
+you build a data buffer to send with a command other than WRITE.
+
+Not to make excuses, but the original intent of this program was to explore
+how to drive SCSI devices and OS2SCSI.DMD, not to produce a bulletproof, easy
+to use program.  In addition, its simplicity makes it easier to understand,
+making it a useful demonstration - there isn't much user interface getting
+in the way of seeing the really functional parts of the program.
+
+7.   Tools
+7.1. GENSCSI.SYS
+
+GENSCSI.SYS will compile with MSC V6.00 and MS MASM V5.1 through 6.0.  You can
+also use the assembler that came with the original OS/2 SDK or the MASM386 that
+is included in the DDK.  Other assemblers may work as well, but I have no
+experience with them.
+
+7.2. SCSITEST
+
+SCSITEST is built with C-Set/2.  I am currently using the 3th beta (2/2/93)
+of the C-Set/C++ compiler.
+
+The options on the compile in the MAKE file are set to use the Multithreaded
+libraries.  This is because the machine I am building this on is fairly
+small so I only installed those libraries.  If you want to change them, go
+ahead.
+
+

@@ -1,0 +1,232 @@
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 20:23:55
+GENERIC Device Driver Assembler Level Utilities             Page     1-1
+
+
+				              PAGE      60,131
+				              TITLE     GENERIC Device Driver Assembler Level Utilities
+				;
+				              .386P     ;    We amy want to use some 386 instructions
+				;
+				;ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+				;³                  CONSTANT DEFINITIONS                                     ³
+				;ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+				;
+ = 0001				TRUE          equ       1      ; Boolean values
+ = 0000				FALSE         equ       0
+ = 002F				REAL_TO_PROT  equ       02fh   ; This is the DevHlp cmd to go to PROTECT mode
+ = 0030				PROT_TO_REAL  equ       030h   ; This is the DevHlp cmd to go to REAL mode
+				;
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 20:23:55
+GENERIC Device Driver Assembler Level Utilities             Page     1-2
+
+
+				              PAGE
+				;
+				;
+				;ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+				;³                  CODE SEGMENT                                             ³
+				;ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+				;
+ 0000				MAINSEG       SEGMENT   WORD PUBLIC 'CODE' USE16
+				;
+				              ASSUME    CS:MAINSEG
+				              public    _in_port
+				              public    _out_port
+				              public    _enable_irpt
+				              public    _disable_irpt
+				              public    _call_idc
+				              extrn     _dev_hlpCS:dword
+				;
+				;
+				;ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+				;³                                                                           ³
+				;³  in_port - Get a byte from an input port                                  ³
+				;³                                                                           ³
+				;³  Syntax - word far in_port(word)                                          ³
+				;³                                                                           ³
+				;ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+				;
+ 0000				_in_port      proc      far
+ 0000  55			              push      bp
+ 0001  8B EC			              mov       bp,sp
+				;
+				; Get the address of the port
+				;
+ 0003  8B 56 06			              mov       dx,[bp+6]
+				;
+				; Do the input
+				;
+ 0006  EC			              in        al,dx
+				;
+				; Clear the high half of the integer
+				;
+ 0007  32 E4			              xor       ah,ah
+				;
+				; and back we go, with the value in AX (MS integer return convention)
+				;
+ 0009  5D			              pop       bp
+ 000A  CB			              ret
+				;
+ 000B				_in_port      endp
+				;
+				;ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+				;³                                                                           ³
+				;³  out_port - Write a byte to an output port                                ³
+				;³                                                                           ³
+				;³  Syntax - void far out_port(word, word)                                   ³
+				;³                             port  data                                    ³
+				;³                                                                           ³
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 20:23:55
+GENERIC Device Driver Assembler Level Utilities             Page     1-3
+
+
+				;ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+				;
+ 000B				_out_port     proc      far
+ 000B  55			              push      bp
+ 000C  8B EC			              mov       bp,sp
+				;
+				; Get the address of the port
+				;
+ 000E  8B 56 06			              mov       dx,[bp+6]
+				;
+				; and the data to output
+				;
+ 0011  8B 46 08			              mov       ax,[bp+8]
+				;
+				; Output it (surprise!)
+				;
+ 0014  EE			              out       dx,al
+				;
+				; All done
+				;
+ 0015  5D			              pop       bp
+ 0016  CB			              ret
+				;
+ 0017				_out_port     endp
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 20:23:55
+GENERIC Device Driver Assembler Level Utilities             Page     1-4
+
+
+				              PAGE
+				;
+				;
+				;*****************************************************************************
+				;*                                                                           *
+				;*  enable_irpt() - Function to Enable CPU interrupts                        *
+				;*                                                                           *
+				;*  Syntax - void far enable_irpt(void)                                      *
+				;*                                                                           *
+				;*****************************************************************************
+				;
+ 0017				_enable_irpt  proc      far
+ 0017  FB			              sti
+ 0018  CB			              ret
+				;
+ 0019				_enable_irpt  endp
+				;
+				;
+				;*****************************************************************************
+				;*                                                                           *
+				;*  Disable_irpt() - Function to Disable CPU interrupts                      *
+				;*                                                                           *
+				;*  Syntax - void far enable_irpt(void)                                      *
+				;*                                                                           *
+				;*****************************************************************************
+				;
+ 0019				_disable_irpt proc      far
+ 0019  FA			              cli
+ 001A  CB			              ret
+				;
+ 001B				_disable_irpt endp
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 20:23:55
+GENERIC Device Driver Assembler Level Utilities             Page     1-5
+
+
+				              PAGE
+				;
+				;
+				;ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+				;³                                                                           ³
+				;³  call_idc - make a call to another DD                                     ³
+				;³                                                                           ³
+				;³  Syntax - void far call_idc(void *target, void *req_hdr, word ds_val)     ³
+				;³                             IDC entry     Request header DD's DS          ³
+				;³                             +6            +10            +14              ³
+				;ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+				;
+ 001B				_call_idc     proc      far
+ 001B  55			              push      bp
+ 001C  8B EC			              mov       bp,sp
+ 001E  1E			              push      ds
+				;
+				; Load the Request header pointer
+				;
+ 001F  C4 5E 0A			              les       bx,[bp+10]
+				;
+				; Set the target's DS
+				;
+ 0022  8B 46 0E			              mov       ax,[bp+14]
+ 0025  8E D8			              mov       ds,ax
+				;
+				; Do the call
+				;
+ 0027  FF 5E 06			              call      dword ptr ss:[bp+6]
+				;
+				; All done
+				;
+ 002A  1F			              pop       ds
+ 002B  5D			              pop       bp
+ 002C  CB			              ret
+				;
+ 002D				_call_idc     endp
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 20:23:55
+GENERIC Device Driver Assembler Level Utilities             Page     1-6
+
+
+				              PAGE
+				;
+ 002D				MAINSEG       ENDS
+				;
+				              END
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 20:23:55
+GENERIC Device Driver Assembler Level Utilities             Symbols-1
+
+
+Segments and Groups:
+
+                N a m e         	Size	Length	 Align	Combine Class
+
+MAINSEG  . . . . . . . . . . . .  	16 Bit	002D	WORD	PUBLIC	'CODE'
+
+Symbols:            
+
+                N a m e         	Type	 Value	 Attr
+
+FALSE  . . . . . . . . . . . . .  	NUMBER	0000	
+
+PROT_TO_REAL . . . . . . . . . .  	NUMBER	0030	
+
+REAL_TO_PROT . . . . . . . . . .  	NUMBER	002F	
+
+TRUE . . . . . . . . . . . . . .  	NUMBER	0001	
+
+@CPU . . . . . . . . . . . . . .  	TEXT  3471		
+@FILENAME  . . . . . . . . . . .  	TEXT  asmutils		
+@VERSION . . . . . . . . . . . .  	TEXT  510		
+_CALL_IDC  . . . . . . . . . . .  	F PROC	001B	MAINSEG	Global	Length = 0012
+_DEV_HLPCS . . . . . . . . . . .  	V DWORD	0000	MAINSEG	External
+_DISABLE_IRPT  . . . . . . . . .  	F PROC	0019	MAINSEG	Global	Length = 0002
+_ENABLE_IRPT . . . . . . . . . .  	F PROC	0017	MAINSEG	Global	Length = 0002
+_IN_PORT . . . . . . . . . . . .  	F PROC	0000	MAINSEG	Global	Length = 000B
+_OUT_PORT  . . . . . . . . . . .  	F PROC	000B	MAINSEG	Global	Length = 000C
+
+
+    167 Source  Lines
+    167 Total   Lines
+     17 Symbols
+
+  46262 Bytes symbol space free
+
+      0 Warning Errors
+      0 Severe  Errors

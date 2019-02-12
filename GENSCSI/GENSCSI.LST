@@ -1,0 +1,277 @@
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 21:21:55
+Generic SCSI Device Driver                                  Page     1-1
+
+
+				              PAGE      60,131
+				;
+				;ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+				;³                                                                           ³
+				;³ Generic SCSI Device Driver                                                ³
+				;³                                                                           ³
+				;ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+				;
+				              .seq                         ;    Use segments in order listed
+				              .386c                        ;    Must use 386 mode if OS/2
+				              TITLE     Generic SCSI Device Driver
+				;
+				;ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+				;³                  ATTRIBUTE EQUATES                                        ³
+				;ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+				;
+ = 8000				CHR           equ       8000H              ;    Bit set if character device
+ = 4000				IDC           equ       4000H              ;    Inter DD communications enabled
+ = 2000				NIBM          equ       2000H              ;    Bit set if NON-IBM Block Format
+ = 1000				SHAR          equ       1000H              ;    Set to support shrd dev. access
+ = 0800				RM            equ       0800H              ;    Set if Removable Media (Blk)
+ = 0800				OPN           equ       0800H              ;    Set if Device Open/Close (Char)
+ = 0080				OS2           equ       0080H              ;    OS/2 Function Level DD
+ = 0008				CLK           equ       0008H              ;    Clock Device
+ = 0004				NUL           equ       0004H              ;    Null Device
+ = 0002				SCR           equ       0002H              ;    Std Output Device (SCREEN)
+ = 0001				KBD           equ       0001H              ;    Std Input Device (KEYBOARD)
+				;
+				;ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+				;³                  EXTERNAL DECLARATIONS                                    ³
+				;ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+				;
+				              EXTRN     _strategy_c:near
+				;
+				;
+				; Automatic Data Grouping
+				DGROUP        GROUP     NULL,_DATA,CONST,_BSS,LAST_D,FAR_BSS
+				
+				; Automatic Code Grouping
+				CGROUP        GROUP     MAINSEG,END_TEXT,_TEXT
+				;
+				;
+				;ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+				;³                  DATA SEGMENT                                             ³
+				;³                                                                           ³
+				;³ This is the start of the DD's data segment.  The very first thing is the  ³
+				;³ device driver header.  Our DD is a character DD that supports OPEN/CLOSE. ³
+				;³ All of our work will be via IOCtls.                                       ³
+				;³                                                                           ³
+				;ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+				;
+				; Device Driver Header must be the first item in the DATA group
+ 0000				NULL          SEGMENT   WORD PUBLIC 'BEGDATA' USE16
+				;             ASSUME    CS:CGROUP, DS:DGROUP, ES:nothing
+				              public    header
+				;             public    __acrtused
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 21:21:55
+Generic SCSI Device Driver                                  Page     1-2
+
+
+				              public    _devhlp
+				;
+ 0000  FFFFFFFF			header        dd        -1                 ; Pointer to next dd header
+ 0004  8880			attrib        dw        OS2+CHR+OPN        ; OS/2 Dev,
+				                                           ; Char. Device,
+				                                           ; Open/Close,
+				                                           ; No IDC support
+				
+ 0006  0000 R			              dw        offset CGROUP:_strat_entry       ; point to Strategy Routine
+ 0008  0000			              dw        0                  ; No IDC
+ 000A  24 47 45 4E 53 43	              db        '$GENSCSI'         ; Name Field (Must be 8 bytes)
+       53 49			
+ 0012  0000000000000000		              dq        (0)                ; Reserved for OS/2
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 21:21:55
+Generic SCSI Device Driver                                  Page     1-3
+
+
+				              PAGE
+ 001A  00000000			_devhlp       dd        ?                  ; DevHlp entry, recv'd on Init Call
+				;
+				;
+				;ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+				;³ These next empty segments are here to let the .seq command above work like³
+				;³ we want.  We want it to put segment LAST_D at the end of the data group.  ³
+				;³ We do this by saying .seq which says to group them as encountered.  Then  ³
+				;³ we tell it which ones to group together by using the GROUP command.  Then ³
+				;³ we put in empty ones for it to encounter.  These have the same names and  ³
+				;³ attributes as the segments the C compiler will produce.  After we have    ³
+				;³ shown the assembler and linker all the C procuced segments, we show him   ³
+				;³ our end of segment marker (LAST_D).  The linker will put all segments with³
+				;³ the same name and attributes together and in the order we specify here.   ³
+				;³                                                                           ³
+				;³ We then do the same thing with the code segments.  The GROUP command tells³
+				;³ which segments to group together, and the order they appear here is the   ³
+				;³ order they will appear in the .SYS file.                                  ³
+				;³                                                                           ³
+				;³ The final 'trick' is to specify the object file from this source file     ³
+				;³ first when linking.  My method is to put ALL others in a library, and just³
+				;³ specify this module's .OBJ file in the linker Automatic Response File     ³
+				;³ (.ARF).                                                                   ³
+				;³                                                                           ³
+				;ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+				;
+ 001E				NULL          ENDS
+ 0000				_DATA         SEGMENT   WORD PUBLIC 'DATA' USE16
+ 0000				_DATA         ENDS
+ 0000				CONST         SEGMENT   WORD PUBLIC 'CONST' USE16
+ 0000				CONST         ENDS
+ 0000				FAR_BSS       SEGMENT   WORD PUBLIC 'FAR_BSS' USE16
+ 0000				FAR_BSS       ENDS
+ 0000				_BSS          SEGMENT   WORD PUBLIC 'BSS' USE16
+ 0000				_BSS          ENDS
+				;
+				;ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+				;³ The next segment MUST be the last data segment to appear.  It marks the   ³
+				;³ end of the data segment, allowing INIT to calculate how big it is, and    ³
+				;³ free the rest.                                                            ³
+				;ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+				;
+ 0000				LAST_D        SEGMENT   WORD PUBLIC 'LAST_DATA' USE16
+				              public    _last_d
+ = 0000				_last_d       equ       $                       ; Marks the end of the data
+ 0000				LAST_D        ENDS
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 21:21:55
+Generic SCSI Device Driver                                  Page     1-4
+
+
+				              PAGE
+				;
+				;ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+				;³                  CODE SEGMENT                                             ³
+				;ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+				;
+ 0000				MAINSEG       SEGMENT   WORD PUBLIC 'CODE' USE16
+				;
+				              ASSUME    CS:MAINSEG, DS:DGROUP, ES:nothing
+				              public    _strategy
+				              public    __chkstk
+				;
+				;ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+				;³ The STRATEGY Entry Point.  (ta da)  It pushes the pointer to the request  ³
+				;³ packet and calls the Strategy routine written in C. This lets the C       ³
+				;³ function see the pointer as a parameter passed in the usual manner.       ³
+				;ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+				;
+ 0000				_strategy     PROC      FAR
+ = 0000				_strat_entry  equ       $
+				;
+ 0000  06			              push      es
+ 0001  53			              push      bx
+ 0002  E8 0000 E		              call      _strategy_c           ; call C strategy routine
+ 0005  5B			              pop       bx
+ 0006  07			              pop       es
+ 0007  CB			              ret
+				;
+ 0008				_strategy     ENDP
+				;
+				;
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 21:21:55
+Generic SCSI Device Driver                                  Page     1-5
+
+
+				              PAGE
+				;
+				;ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+				;³ This is a replacement for the C compiler's stack checking routine.  It    ³
+				;³ is declared as external by the compiler, but it should never be called    ³
+				;³ as we compile with all stack probes removed.  If, however, it should get  ³
+				;³ called, it allocates the local variables like the compiler's __chkstk,    ³
+				;³ without generating an error if the stack is not big enough.               ³
+				;ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+				;
+ 0008				__chkstk      proc      far
+ 0008  59			              pop       cx
+ 0009  5A			              pop       dx
+ 000A  8B DC			              mov       bx,sp
+ 000C  2B D8			              sub       bx,ax
+ 000E  8B E3			              mov       sp,bx
+ 0010  52			              push      dx
+ 0011  51			              push      cx
+ 0012  CB			              ret
+ 0013				__chkstk      endp
+				;
+ 0013				MAINSEG       ENDS
+				;
+ 0000				_TEXT         SEGMENT   WORD PUBLIC 'CODE' USE16
+ 0000				_TEXT         ends
+				;ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+				;³ The next segment marks the end of the code to be kept.  The C compiler    ³
+				;³ will call all its segments _TEXT, so they will be combined with this one  ³
+				;³ Our discardable segments will be tacked on after END_TEXT, and will be    ³
+				;³ discarded after INIT is done.                                             ³
+				;ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+				;
+ 0000				END_TEXT      SEGMENT   WORD PUBLIC 'CODE' USE16
+				              public    _last_c
+ = 0000				_last_c       equ       $
+ 0000				END_TEXT      ends
+				;
+ 0000				INITSEG       SEGMENT   WORD PUBLIC 'CODE' USE16
+ 0000				INITSEG       ends
+				              END
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 21:21:55
+Generic SCSI Device Driver                                  Symbols-1
+
+
+Segments and Groups:
+
+                N a m e         	Size	Length	 Align	Combine Class
+
+CGROUP . . . . . . . . . . . . .  	GROUP
+  MAINSEG  . . . . . . . . . . .  	16 Bit	0013	WORD	PUBLIC	'CODE'
+  END_TEXT . . . . . . . . . . .  	16 Bit	0000	WORD	PUBLIC	'CODE'
+  _TEXT  . . . . . . . . . . . .  	16 Bit	0000	WORD	PUBLIC	'CODE'
+DGROUP . . . . . . . . . . . . .  	GROUP
+  NULL . . . . . . . . . . . . .  	16 Bit	001E	WORD	PUBLIC	'BEGDATA'
+  _DATA  . . . . . . . . . . . .  	16 Bit	0000	WORD	PUBLIC	'DATA'
+  CONST  . . . . . . . . . . . .  	16 Bit	0000	WORD	PUBLIC	'CONST'
+  _BSS . . . . . . . . . . . . .  	16 Bit	0000	WORD	PUBLIC	'BSS'
+  LAST_D . . . . . . . . . . . .  	16 Bit	0000	WORD	PUBLIC	'LAST_DATA'
+  FAR_BSS  . . . . . . . . . . .  	16 Bit	0000	WORD	PUBLIC	'FAR_BSS'
+INITSEG  . . . . . . . . . . . .  	16 Bit	0000	WORD	PUBLIC	'CODE'
+
+Symbols:            
+
+                N a m e         	Type	 Value	 Attr
+
+ATTRIB . . . . . . . . . . . . .  	L WORD	0004	NULL
+
+CHR  . . . . . . . . . . . . . .  	NUMBER	8000	
+CLK  . . . . . . . . . . . . . .  	NUMBER	0008	
+
+HEADER . . . . . . . . . . . . .  	L DWORD	0000	NULL	Global
+
+IDC  . . . . . . . . . . . . . .  	NUMBER	4000	
+
+KBD  . . . . . . . . . . . . . .  	NUMBER	0001	
+
+NIBM . . . . . . . . . . . . . .  	NUMBER	2000	
+NUL  . . . . . . . . . . . . . .  	NUMBER	0004	
+
+OPN  . . . . . . . . . . . . . .  	NUMBER	0800	
+OS2  . . . . . . . . . . . . . .  	NUMBER	0080	
+
+RM . . . . . . . . . . . . . . .  	NUMBER	0800	
+
+SCR  . . . . . . . . . . . . . .  	NUMBER	0002	
+SHAR . . . . . . . . . . . . . .  	NUMBER	1000	
+
+@CPU . . . . . . . . . . . . . .  	TEXT  3343		
+@FILENAME  . . . . . . . . . . .  	TEXT  genscsi		
+@VERSION . . . . . . . . . . . .  	TEXT  510		
+_DEVHLP  . . . . . . . . . . . .  	L DWORD	001A	NULL	Global
+_LAST_C  . . . . . . . . . . . .  	NEAR	0000	END_TEXT	Global
+_LAST_D  . . . . . . . . . . . .  	NEAR	0000	LAST_D	Global
+_STRATEGY  . . . . . . . . . . .  	F PROC	0000	MAINSEG	Global	Length = 0008
+_STRATEGY_C  . . . . . . . . . .  	L NEAR	0000		External
+_STRAT_ENTRY . . . . . . . . . .  	NEAR	0000	MAINSEG
+__CHKSTK . . . . . . . . . . . .  	F PROC	0008	MAINSEG	Global	Length = 000B
+
+Microsoft (R) Macro Assembler Version 5.10                  3/16/93 21:21:55
+Generic SCSI Device Driver                                  Symbols-2
+
+
+
+    185 Source  Lines
+    185 Total   Lines
+     42 Symbols
+
+  46450 Bytes symbol space free
+
+      0 Warning Errors
+      0 Severe  Errors

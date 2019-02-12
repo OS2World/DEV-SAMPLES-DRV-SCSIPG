@@ -1,0 +1,283 @@
+;	Static Name Aliases
+;
+	TITLE   .\src\ddutils.c
+	.8087
+INCLUDELIB	LLIBCE
+MAINSEG	SEGMENT  WORD PUBLIC 'CODE'
+MAINSEG	ENDS
+_DATA	SEGMENT  WORD PUBLIC 'DATA'
+_DATA	ENDS
+CONST	SEGMENT  WORD PUBLIC 'CONST'
+CONST	ENDS
+_BSS	SEGMENT  WORD PUBLIC 'BSS'
+_BSS	ENDS
+DGROUP	GROUP	CONST, _BSS, _DATA
+	ASSUME DS: DGROUP
+	ASSUME  SS: NOTHING
+EXTRN	_dev_help:FAR
+MAINSEG      SEGMENT
+	ASSUME	CS: MAINSEG
+;|*** /*****************************************************************************/
+; Line 1
+;|*** /* General Device Driver Utilities                                           */
+;|*** /*****************************************************************************/
+;|*** /* This file contains a bunch of general utility functions all DDs need.     */
+;|*** /*****************************************************************************/
+;|*** /*                                                                           */
+;|*** /* void far dev_done(req,status)                                             */
+;|*** /* reqhdr_type *req;                                                         */
+;|*** /* word status;                                                              */
+;|*** /*                                                                           */
+;|*** /* dev_done - Set the status in the request packet, set the done bit and     */
+;|*** /*            unblock the process.                                           */
+;|*** /*                                                                           */
+;|*** /* Only return code is SUCCESS.  This is the only return code from the       */
+;|*** /* devhlp function that is called.                                           */
+;|*** /*                                                                           */
+;|*** /*****************************************************************************/
+;|*** /*                                                                           */
+;|*** /* _32bits far alloc_req(void)                                               */
+;|*** /*                                                                           */
+;|*** /* alloc_req - Allocate a request packet.  This request packet will be       */
+;|*** /*             passed to another process and freed (via free_req) when it    */
+;|*** /*             is done.                                                      */
+;|*** /*                                                                           */
+;|*** /* The return value is a far pointer to the allocted request packet.  If the */
+;|*** /* request failed, the return value is 0000:0000.                            */
+;|*** /*                                                                           */
+;|*** /*****************************************************************************/
+;|*** /*                                                                           */
+;|*** /* void far free_req(void)                                                   */
+;|*** /*                                                                           */
+;|*** /* free_req - Free a request packet allocated by alloc_req (above).          */
+;|*** /*                                                                           */
+;|*** /* There is no return code.  We don't care if it worked or not.              */
+;|*** /*                                                                           */
+;|*** /*****************************************************************************/
+;|*** #include <string.h>
+; Line 37
+;|*** #include "genscsi.h"
+; Line 38
+;|*** #include "const.h"
+; Line 1
+;|*** #include "struc.h"
+; Line 2
+;|*** #include "externs.h"
+; Line 3
+;|*** 
+;|*** void far dev_done(req,status)
+;|*** reqhdr_type *req;
+; Line 41
+	PUBLIC	_dev_done
+_dev_done	PROC FAR
+	*** 000000	55 			push	bp
+	*** 000001	8b ec 			mov	bp,sp
+	*** 000003	81 ec 30 00 		sub	sp,48
+	*** 000007	57 			push	di
+	*** 000008	56 			push	si
+;	in_regs = -26
+;	out_regs = -48
+;	pointer = -4
+;	status = 10
+;	req = 6
+;|*** word status;
+;|*** {
+;|***   union cpu_regs in_regs,out_regs;
+;|***   _32bits pointer;
+;|*** 
+;|***   /* Set the status field in the request packet to the requested value */
+;|***   req->rh_stat = status;
+; Line 48
+	*** 000009	8b 46 0a 		mov	ax,WORD PTR [bp+10]	;status
+	*** 00000c	c4 5e 06 		les	bx,DWORD PTR [bp+6]	;req
+	*** 00000f	26 89 47 03 		mov	WORD PTR es:[bx+3],ax
+;|*** 
+;|***   pointer.phys = (physaddr)req;
+; Line 50
+	*** 000013	8b 46 06 		mov	ax,WORD PTR [bp+6]	;req
+	*** 000016	8b 56 08 		mov	dx,WORD PTR [bp+8]
+	*** 000019	89 46 fc 		mov	WORD PTR [bp-4],ax	;pointer
+	*** 00001c	89 56 fe 		mov	WORD PTR [bp-2],dx
+;|***   in_regs.W.BX = pointer._segadr.offset;   /* BX = offset of request packet  */
+; Line 51
+	*** 00001f	8b 46 fc 		mov	ax,WORD PTR [bp-4]	;pointer
+	*** 000022	89 46 e8 		mov	WORD PTR [bp-24],ax
+;|***   in_regs.W.ES = pointer._segadr.segment;  /* ES = segment of request packet */
+; Line 52
+	*** 000025	8b 46 fe 		mov	ax,WORD PTR [bp-2]
+	*** 000028	89 46 f2 		mov	WORD PTR [bp-14],ax
+;|***   in_regs.B.DL = devhlp_DevDone;           /* DL = Dev_done command          */
+; Line 53
+	*** 00002b	c6 46 ec 01 		mov	BYTE PTR [bp-20],1
+;|***   in_regs.W.es_valid = TRUE;               /* ES has a valid selector        */
+; Line 54
+	*** 00002f	c6 46 fa 01 		mov	BYTE PTR [bp-6],1
+;|***   in_regs.W.ds_valid = FALSE;              /* DS is not a valid selector     */
+; Line 55
+	*** 000033	c6 46 fb 00 		mov	BYTE PTR [bp-5],0
+;|***   dev_help(&in_regs,&out_regs);            /* Do it!                         */
+; Line 56
+	*** 000037	8d 46 d0 		lea	ax,WORD PTR [bp-48]	;out_regs
+	*** 00003a	16 			push	ss
+	*** 00003b	50 			push	ax
+	*** 00003c	8d 46 e6 		lea	ax,WORD PTR [bp-26]	;in_regs
+	*** 00003f	16 			push	ss
+	*** 000040	50 			push	ax
+	*** 000041	9a 00 00 00 00 		call	FAR PTR _dev_help
+	*** 000046	83 c4 08 		add	sp,8
+;|***   return;                                  /* We don't care what the return  */
+; Line 57
+	*** 000049	e9 00 00 		jmp	$EX247
+;|***                                            /*    code is because DevHlp does */
+;|***                                            /*    not return anything but OK  */
+;|*** }
+; Line 60
+					$EX247:
+	*** 00004c	5e 			pop	si
+	*** 00004d	5f 			pop	di
+	*** 00004e	8b e5 			mov	sp,bp
+	*** 000050	5d 			pop	bp
+	*** 000051	cb 			ret	
+
+_dev_done	ENDP
+;|*** 
+;|*** _32bits far alloc_req(void)
+;|*** {
+; Line 63
+	PUBLIC	_alloc_req
+_alloc_req	PROC FAR
+	*** 000052	55 			push	bp
+	*** 000053	8b ec 			mov	bp,sp
+	*** 000055	81 ec 30 00 		sub	sp,48
+	*** 000059	57 			push	di
+	*** 00005a	56 			push	si
+;	in_regs = -26
+;	out_regs = -48
+;	pointer = -4
+;|***   union cpu_regs in_regs,out_regs;
+;|***   _32bits pointer;
+;|*** 
+;|***   in_regs.B.DH = 0;                        /* Wait for one                   */
+; Line 67
+	*** 00005b	c6 46 ed 00 		mov	BYTE PTR [bp-19],0
+;|***   in_regs.B.DL = devhlp_AllocReqPacket;    /* DL = Dev_done command          */
+; Line 68
+	*** 00005f	c6 46 ec 0d 		mov	BYTE PTR [bp-20],13
+;|***   in_regs.W.es_valid = FALSE;              /* ES is not a valid selector     */
+; Line 69
+	*** 000063	c6 46 fa 00 		mov	BYTE PTR [bp-6],0
+;|***   in_regs.W.ds_valid = FALSE;              /* DS is not a valid selector     */
+; Line 70
+	*** 000067	c6 46 fb 00 		mov	BYTE PTR [bp-5],0
+;|***   dev_help(&in_regs,&out_regs);            /* Do it!                         */
+; Line 71
+	*** 00006b	8d 46 d0 		lea	ax,WORD PTR [bp-48]	;out_regs
+	*** 00006e	16 			push	ss
+	*** 00006f	50 			push	ax
+	*** 000070	8d 46 e6 		lea	ax,WORD PTR [bp-26]	;in_regs
+	*** 000073	16 			push	ss
+	*** 000074	50 			push	ax
+	*** 000075	9a 00 00 00 00 		call	FAR PTR _dev_help
+	*** 00007a	83 c4 08 		add	sp,8
+;|***   if ((out_regs.W.flags & 0x0001) != 0) {  /* If it failed           */
+; Line 72
+	*** 00007d	f6 46 e2 01 		test	BYTE PTR [bp-30],1
+	*** 000081	75 03 			jne	$JCC129
+	*** 000083	e9 11 00 		jmp	$I255
+					$JCC129:
+;|***      pointer.phys = 0L;
+; Line 73
+	*** 000086	2b c0 			sub	ax,ax
+	*** 000088	89 46 fe 		mov	WORD PTR [bp-2],ax
+	*** 00008b	89 46 fc 		mov	WORD PTR [bp-4],ax	;pointer
+;|***      return(pointer);                      /*    Return 0            */
+; Line 74
+	*** 00008e	8b 46 fc 		mov	ax,WORD PTR [bp-4]	;pointer
+	*** 000091	8b 56 fe 		mov	dx,WORD PTR [bp-2]
+	*** 000094	e9 15 00 		jmp	$EX251
+;|***      }                                     /* Endif                  */
+; Line 75
+;|***   pointer._segadr.segment = out_regs.W.ES;
+; Line 76
+					$I255:
+	*** 000097	8b 46 dc 		mov	ax,WORD PTR [bp-36]
+	*** 00009a	89 46 fe 		mov	WORD PTR [bp-2],ax
+;|***   pointer._segadr.offset  = out_regs.W.BX;
+; Line 77
+	*** 00009d	8b 46 d2 		mov	ax,WORD PTR [bp-46]
+	*** 0000a0	89 46 fc 		mov	WORD PTR [bp-4],ax	;pointer
+;|***   return(pointer);                         /* Return packet pointer          */
+; Line 78
+	*** 0000a3	8b 46 fc 		mov	ax,WORD PTR [bp-4]	;pointer
+	*** 0000a6	8b 56 fe 		mov	dx,WORD PTR [bp-2]
+	*** 0000a9	e9 00 00 		jmp	$EX251
+;|*** }
+; Line 79
+					$EX251:
+	*** 0000ac	5e 			pop	si
+	*** 0000ad	5f 			pop	di
+	*** 0000ae	8b e5 			mov	sp,bp
+	*** 0000b0	5d 			pop	bp
+	*** 0000b1	cb 			ret	
+
+_alloc_req	ENDP
+;|*** 
+;|*** void far free_req(_32bits ptr)
+;|*** {
+; Line 82
+	PUBLIC	_free_req
+_free_req	PROC FAR
+	*** 0000b2	55 			push	bp
+	*** 0000b3	8b ec 			mov	bp,sp
+	*** 0000b5	81 ec 2c 00 		sub	sp,44
+	*** 0000b9	57 			push	di
+	*** 0000ba	56 			push	si
+;	in_regs = -22
+;	out_regs = -44
+;	ptr = 6
+;|***   union cpu_regs in_regs,out_regs;
+;|*** 
+;|***   in_regs.W.BX = ptr._segadr.offset;       /* BX = offset of request packet  */
+; Line 85
+	*** 0000bb	8b 46 06 		mov	ax,WORD PTR [bp+6]	;ptr
+	*** 0000be	89 46 ec 		mov	WORD PTR [bp-20],ax
+;|***   in_regs.W.ES = ptr._segadr.segment;      /* ES = segment of request packet */
+; Line 86
+	*** 0000c1	8b 46 08 		mov	ax,WORD PTR [bp+8]
+	*** 0000c4	89 46 f6 		mov	WORD PTR [bp-10],ax
+;|***   in_regs.B.DL = devhlp_FreeReqPacket;     /* DL = Dev_done command          */
+; Line 87
+	*** 0000c7	c6 46 f0 0e 		mov	BYTE PTR [bp-16],14
+;|***   in_regs.W.es_valid = TRUE;               /* ES has a valid selector        */
+; Line 88
+	*** 0000cb	c6 46 fe 01 		mov	BYTE PTR [bp-2],1
+;|***   in_regs.W.ds_valid = FALSE;              /* DS is not a valid selector     */
+; Line 89
+	*** 0000cf	c6 46 ff 00 		mov	BYTE PTR [bp-1],0
+;|***   dev_help(&in_regs,&out_regs);            /* Do it!                         */
+; Line 90
+	*** 0000d3	8d 46 d4 		lea	ax,WORD PTR [bp-44]	;out_regs
+	*** 0000d6	16 			push	ss
+	*** 0000d7	50 			push	ax
+	*** 0000d8	8d 46 ea 		lea	ax,WORD PTR [bp-22]	;in_regs
+	*** 0000db	16 			push	ss
+	*** 0000dc	50 			push	ax
+	*** 0000dd	9a 00 00 00 00 		call	FAR PTR _dev_help
+	*** 0000e2	83 c4 08 		add	sp,8
+;|***   return;                                  /* We don't care what the return  */
+; Line 91
+	*** 0000e5	e9 00 00 		jmp	$EX257
+;|***                                            /*    code is because DevHlp does */
+;|***                                            /*    not return anything but OK  */
+;|*** }
+; Line 94
+					$EX257:
+	*** 0000e8	5e 			pop	si
+	*** 0000e9	5f 			pop	di
+	*** 0000ea	8b e5 			mov	sp,bp
+	*** 0000ec	5d 			pop	bp
+	*** 0000ed	cb 			ret	
+
+_free_req	ENDP
+MAINSEG	ENDS
+END

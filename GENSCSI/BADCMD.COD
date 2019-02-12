@@ -1,0 +1,56 @@
+;	Static Name Aliases
+;
+	TITLE   .\src\badcmd.c
+	.8087
+MAINSEG	SEGMENT  WORD PUBLIC 'CODE'
+MAINSEG	ENDS
+_DATA	SEGMENT  WORD PUBLIC 'DATA'
+_DATA	ENDS
+CONST	SEGMENT  WORD PUBLIC 'CONST'
+CONST	ENDS
+_BSS	SEGMENT  WORD PUBLIC 'BSS'
+_BSS	ENDS
+DGROUP	GROUP	CONST, _BSS, _DATA
+	ASSUME  CS: MAINSEG, DS: DGROUP, SS: DGROUP
+MAINSEG      SEGMENT
+	ASSUME	CS: MAINSEG
+;|*** /* Return the status value for a bad command */
+;|*** 
+;|*** #include "genscsi.h"
+; Line 3
+;|*** #include "const.h"
+; Line 1
+;|*** #include "struc.h"
+; Line 2
+;|*** #include "externs.h"
+; Line 3
+;|*** 
+;|*** word far bad_cmd(void)
+;|*** {
+; Line 6
+	PUBLIC	_bad_cmd
+_bad_cmd	PROC FAR
+	*** 000000	55 			push	bp
+	*** 000001	8b ec 			mov	bp,sp
+	*** 000003	81 ec 00 00 		sub	sp,0
+	*** 000007	57 			push	di
+	*** 000008	56 			push	si
+;|*** 
+;|*** return(ERROR+INV_CMD);
+; Line 8
+	*** 000009	b8 03 80 		mov	ax,-32765
+	*** 00000c	e9 00 00 		jmp	$EX459
+;|*** 
+;|*** }
+; Line 10
+					$EX459:
+	*** 00000f	5e 			pop	si
+	*** 000010	5f 			pop	di
+	*** 000011	8b e5 			mov	sp,bp
+	*** 000013	5d 			pop	bp
+	*** 000014	cb 			ret	
+
+_bad_cmd	ENDP
+	*** 000015	90 			nop	
+MAINSEG	ENDS
+END

@@ -1,0 +1,82 @@
+
+Microsoft (R) Segmented-Executable Linker  Version 5.10    
+Copyright (C) Microsoft Corp 1984-1990.  All rights reserved.
+
+Object Modules [.OBJ]: .\obj\genscsi+
+Object Modules [.OBJ]: /map /Info /NOD /NOP
+Run File [genscsi.exe]: genscsi
+List File [E:genscsi.map]: .\lst\genscsi.map
+Libraries [.LIB]: genscsi+llibce+os2
+Definitions File [NUL.DEF]: genscsi.def
+**** PARSE DEFINITIONS FILE ****
+**** PASS ONE ****
+.\obj\genscsi.obj(.\src\genscsi.ASM)
+**** LIBRARY SEARCH ****
+genscsi.lib(.\src\asmutils.ASM)
+genscsi.lib(.\src\ddutils.c)
+genscsi.lib(.\src\devhlp.ASM)
+genscsi.lib(.\src\gdtmem.c)
+genscsi.lib(.\src\ldtmem.c)
+genscsi.lib(.\src\ioctl.c)
+genscsi.lib(.\src\linmem.c)
+genscsi.lib(.\src\lock.c)
+genscsi.lib(.\src\strategy.c)
+genscsi.lib(.\src\brkpoint.ASM)
+genscsi.lib(.\src\openclos.c)
+genscsi.lib(.\src\prtmsg.c)
+genscsi.lib(.\src\init.c)
+genscsi.lib(.\src\scsi.c)
+E:\C600\LIB\llibce.lib(strcpy.asm)
+E:\C600\LIB\llibce.lib(itoa.asm)
+E:\C600\LIB\llibce.lib(strchr.asm)
+E:\C600\LIB\llibce.lib(strtok.asm)
+E:\C600\LIB\llibce.lib(xtoa.asm)
+E:\C600\LIB\os2.lib(DOSOPEN)
+E:\C600\LIB\os2.lib(DOSREAD)
+E:\C600\LIB\os2.lib(DOSTRUEGETMESSAGE)
+E:\C600\LIB\os2.lib(DOSPUTMESSAGE)
+E:\C600\LIB\os2.lib(msgseg.asm)
+**** ASSIGN ADDRESSES ****
+  1 segment "NULL" class "BEGDATA" length 1EH bytes
+  2 segment "_DATA" class "DATA" length 16H bytes
+  3 segment "CONST" class "CONST" length 2H bytes
+  4 segment "FAR_BSS" class "FAR_BSS" length 0H bytes
+  5 segment "_BSS" class "BSS" length 6H bytes
+  6 segment "LAST_D" class "LAST_DATA" length 0H bytes
+  7 segment "MAINSEG" class "CODE" length 1BD5H bytes
+  8 segment "_TEXT" class "CODE" length 18DH bytes
+  9 segment "END_TEXT" class "CODE" length 0H bytes
+ 10 segment "INITSEG" class "CODE" length 84H bytes
+ 11 segment "C_ETEXT" class "ENDCODE" length 0H bytes
+ 12 segment "_MSGSEG" class "MSGSEGCODE" length 2CH bytes
+ 13 segment "c_common" class "BSS" length 11AH bytes
+ 14 segment "FAR_BSS" class "FAR_BSS" length 44CH bytes
+**** PRINT MAP ****
+**** PASS TWO ****
+.\obj\genscsi.obj(.\src\genscsi.ASM)
+genscsi.lib(.\src\asmutils.ASM)
+genscsi.lib(.\src\ddutils.c)
+genscsi.lib(.\src\devhlp.ASM)
+genscsi.lib(.\src\gdtmem.c)
+genscsi.lib(.\src\ldtmem.c)
+genscsi.lib(.\src\ioctl.c)
+genscsi.lib(.\src\linmem.c)
+genscsi.lib(.\src\lock.c)
+genscsi.lib(.\src\strategy.c)
+genscsi.lib(.\src\brkpoint.ASM)
+genscsi.lib(.\src\openclos.c)
+genscsi.lib(.\src\prtmsg.c)
+genscsi.lib(.\src\init.c)
+genscsi.lib(.\src\scsi.c)
+E:\C600\LIB\llibce.lib(strcpy.asm)
+E:\C600\LIB\llibce.lib(itoa.asm)
+E:\C600\LIB\llibce.lib(strchr.asm)
+E:\C600\LIB\llibce.lib(strtok.asm)
+E:\C600\LIB\llibce.lib(xtoa.asm)
+E:\C600\LIB\os2.lib(DOSOPEN)
+E:\C600\LIB\os2.lib(DOSREAD)
+E:\C600\LIB\os2.lib(DOSTRUEGETMESSAGE)
+E:\C600\LIB\os2.lib(DOSPUTMESSAGE)
+E:\C600\LIB\os2.lib(msgseg.asm)
+**** WRITING EXECUTABLE ****
+LINK : warning L4045: name of output file is 'genscsi.dll'

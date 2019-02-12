@@ -1,0 +1,1149 @@
+
+APPENDIX B.  OS/2 SCSI DEVICE DRIVER INTERFACE SPECIFICATION   . . . . .  B-1
+Introduction   . . . . . . . . . . . . . . . . . . . . . . . . . . . . .  B-1
+ Naming Conventions  . . . . . . . . . . . . . . . . . . . . . . . . . .  B-3
+Generic IOCtl Request  . . . . . . . . . . . . . . . . . . . . . . . . .  B-3
+  OS/2 SCSI Services   . . . . . . . . . . . . . . . . . . . . . . . . .  B-4
+    Read Device Parameters   . . . . . . . . . . . . . . . . . . . . . .  B-4
+    Reset/Initialize   . . . . . . . . . . . . . . . . . . . . . . . . .  B-5
+    Enable Adapter Cache   . . . . . . . . . . . . . . . . . . . . . . .  B-6
+    Disable Adapter Cache  . . . . . . . . . . . . . . . . . . . . . . .  B-6
+    Return Adapter Cache Status  . . . . . . . . . . . . . . . . . . . .  B-7
+    Set Device Timeout   . . . . . . . . . . . . . . . . . . . . . . . .  B-7
+    Read Device Timeout  . . . . . . . . . . . . . . . . . . . . . . . .  B-8
+    Transfer SCB   . . . . . . . . . . . . . . . . . . . . . . . . . . .  B-8
+    Allocate Device  . . . . . . . . . . . . . . . . . . . . . . . . .   B-10
+    Deallocate Device  . . . . . . . . . . . . . . . . . . . . . . . .   B-11
+    Return Peripheral Type Count   . . . . . . . . . . . . . . . . . .   B-12
+    Send Abort   . . . . . . . . . . . . . . . . . . . . . . . . . . .   B-12
+Return Codes   . . . . . . . . . . . . . . . . . . . . . . . . . . . .   B-14
+Error Recovery Procedure   . . . . . . . . . . . . . . . . . . . . . .   B-16
+Device-Class Driver Model  . . . . . . . . . . . . . . . . . . . . . .   B-16
+  Overview   . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   B-16
+  Initialization Routine   . . . . . . . . . . . . . . . . . . . . . .   B-17
+  Strategy Routine   . . . . . . . . . . . . . . . . . . . . . . . . .   B-17
+  Interrupt Handler  . . . . . . . . . . . . . . . . . . . . . . . . .   B-17
+  DMA Data Structures  . . . . . . . . . . . . . . . . . . . . . . . .   B-17
+
+
+
+APPENDIX B.  OS/2 SCSI DEVICE DRIVER INTERFACE SPECIFICATION
+
+
+
+
+
+This appendix describes the high-level interface for the SCSI Device Driver
+for OS/2.  For completeness, all functions are listed; however, functions
+that are not implemented are so indicated.  This appendix is derived from the
+SCSI Device Driver Design Workbook by Barry Khatri and Dan Feriozi.  Some of
+the internal specifications of the device driver have not been included here
+so that this document can be externally distributed to vendors wanting to
+write device drivers to the SCSI device driver interface.
+
+
+INTRODUCTION
+
+The SCSI driver is the lower half of a split model for OS/2 SCSI device
+drivers.  The SCSI driver drives the SCSI adapter through the SCSI ADD as
+shown in the following functional diagram.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            Appendix B.  OS/2 SCSI Device Driver Interface Specification  B-1
+
+
+
+               +-----------------------------------------------------------+
+               |                                                           |
+               |                                                           |
+               |                       OS/2 KERNEL                         |
+               |                                                           |
+               |                                                           |
+               +-----------------------------------------------------------+
+                      |                  |                 |
+                      |                  |                 |
+                      |                  |                 |
+               +--------------+ +----------------+ +--------------+
+               | CDROM CLASS  | |  OPTICAL CLASS | | OTHER CLASS  |  ....
+               |   DRIVER     | |     DRIVER     | |    DRIVER    |
+               +--------------+ +----------------+ +--------------+
+                      |                  |                 |
+                      |                  |                 |
+               +-----------------------------------------------------------+
+               |                                                           |
+               |             OS2SCSI.DMD SCSI DEVICE MANAGER               |
+               |                                                           |
+               +-----------------------------------------------------------+
+                                             |
+                                             |
+                                             |
+               +-----------------------------------------------------------+
+               |                         SCSI ADD                          |
+               +-----------------------------------------------------------+
+                                             |
+                                             |
+               +-----------------------------------------------------------+
+               |                        SCSI ADAPTER                       |
+               +-----------------------------------------------------------+
+                      |                 |                  |
+                      |                 |                  |
+               +--------------+ +----------------+ +--------------+
+               | CDROM SCSI   | |  OPTICAL SCSI  | | OTHER SCSI   |  ....
+               |    DEVICE    | |     DEVICE     | |    DEVICE    |
+               +--------------+ +----------------+ +--------------+
+
+
+Figure  B-1. Split Device Driver Model for OS/2
+
+The diagram illustrates the relationship between the device drivers and their
+interaction with other components of the system.
+
+The split device driver model uses the principles of code layering to
+facilitate development and maintenance of new SCSI device drivers.  The
+provision of common functions in the SCSI driver also reduces memory
+requirements.  Performance is enhanced because the SCSI driver centralizes
+control of the SCSI channel, thus reducing contention.  Only one interrupt
+handler is registered for all the SCSI peripheral devices.
+
+
+
+
+            Appendix B.  OS/2 SCSI Device Driver Interface Specification  B-2
+
+
+A split device driver model has been used by IBM for all the SCSI devices
+except the SCSI fixed disks, which use the OS/2 DASD Manager.  The
+device-class driver is the upper-level driver, and the SCSI driver is the
+lower-level driver.  The device-class driver does not interact directly with
+the SCSI adapter or the SCSI device.  The device-class driver sends commands
+to the SCSI device manager, which in turn sends commands to the device using
+the IORB ADD interface.
+
+The device-class driver looks very much like an OS/2 device driver.  It maps
+an OS/2 request into an SCB, or a chain of SCBs, and passes the request
+immediately to the SCSI driver.  The SCSI driver handles all queuing and
+interrupts and insulates the device-class driver from the procedural details
+of managing adapter hardware.  The device-class driver requests a service,
+like Transfer SCB, from the SCSI device manager.  When control is returned to
+the device-class driver, the called service is complete.  If an error
+occurred, the termination status block (TSB) might contain error information.
+In addition, sense data might have been returned.
+
+
+NAMING CONVENTIONS
+
+o   SCSI DRIVER
+    The file name for the SCSI driver is OS2SCSI.DMD.  The IDC entry point
+    for the SCSI driver can be obtained from the ATTACHDD DevHlp function by
+    using the name SCSI-02$ as the device driver name parameter.
+
+o   IBM DEVICE-CLASS DRIVERS
+    Current device driver names used by IBM are:
+
+    CDROM.SYS     CD-ROM device driver
+    OPTICAL.SYS   Read/Write optical device driver
+
+    NOTE:  Naming conflicts are possible, so try to choose unique names for
+           your device-class drivers.  In a SCSI environment, different
+           vendor devices for the same SCSI device class can be present in
+           one system.
+
+o   MESSAGE FILES
+    The IBM-reserved message file name for device drivers that have been
+    developed internally is DEV002.MSG.  Independent vendors must not use
+    DEV002.MSG for their message files, because if they do, one of those
+    message files could be destroyed during the user installation process.
+    It is suggested that vendors choose a unique message file name by
+    embedding part of their logo or company name in the file name; that would
+    eliminate the possibility of having different vendor devices with the
+    same message file name installed in the same system.
+
+
+GENERIC IOCTL REQUEST
+
+The input to the SCSI driver is a generic IOCtl request packet, pointed to by
+the ES:BX register pair.
+
+
+
+
+            Appendix B.  OS/2 SCSI Device Driver Interface Specification  B-3
+
+
+OS/2 SCSI SERVICES
+
+*iiiiiiiiiiiiiiiiiiiiii i1.OS/2 SCSI services i2 refid=serv.OS2SCSI i1.80H
+function category, OS/2 SCSI services i1.40H function code, OS/2 SCSI
+services i2 refid=scsi.OS/2 SCSI requests i1.Read Device Parameters i2
+refid=scsi.Read Device Parameters request i2 refid=func.Read Device
+Parameters *iiiiiiiiiiiiiiiiiiiiii
+
+The SCSI driver supports the following requests:
+
+o   Read Device Parameters
+o   Reset/Initialization
+o   Enable Adapter Cache
+o   Disable Adapter Cache
+o   Return Adapter Cache Status
+o   Set Device Timeout
+o   Read Device Timeout
+o   Transfer SCB
+o   Deallocate Device
+o   Allocate Device
+o   Return Peripheral Type Count
+o   Abort
+
+
+Read Device Parameters
+
+This function returns some information about the device.  Of particular
+interest is the LUN, which is required if a Send Other command is used.
+
+INPUT PARAMETER STRUCTURE
+
+FIELD            LENGTH
+Device Handle    WORD
+
+  FUNCTION CATEGORY : 80H
+  FUNCTION CODE     : 43H
+
+This function requires a device handle to be passed in the request.  The
+device must be allocated by the device-class driver before calling this
+function.  The function category and function code are to be set up as shown
+above.
+
++---------------------------------------------------------------------------+
+| Table  B-1 (Page 1 of 2). Data Buffer                                     |
++-----------------------------+---------------------------------------------+
+| FIELD NAME                  | LENGTH                                      |
++-----------------------------+---------------------------------------------+
+| Device Key Index            | WORD                                        |
++-----------------------------+---------------------------------------------+
+| SCB Architecture Card Comp. | BYTE                                        |
+| Level                       |                                             |
++-----------------------------+---------------------------------------------+
+| Adapter Index               | BYTE                                        |
++-----------------------------+---------------------------------------------+
+
+
+            Appendix B.  OS/2 SCSI Device Driver Interface Specification  B-4
+
+
++---------------------------------------------------------------------------+
+| Table  B-1 (Page 2 of 2). Data Buffer                                     |
++-----------------------------+---------------------------------------------+
+| FIELD NAME                  | LENGTH                                      |
++-----------------------------+---------------------------------------------+
+| Device Flags                | WORD                                        |
++-----------------------------+---------------------------------------------+
+| Logical unit number (LUN)   | BYTE                                        |
++-----------------------------+---------------------------------------------+
+| Physical unit number (LUN)  | BYTE                                        |
++-----------------------------+---------------------------------------------+
+
+Adapter Index
+contains the adapter number for the SCSI adapter.
+
+Device Flags
+
+BIT 4     0 = Adapter cache not supported.
+          1 = Adapter cache supported.
+
+BIT 1     0 = Device power ON.
+          1 = Device power OFF.
+
+BIT 0     0 = Device is not defective.
+          1 = Device is defective.
+
+
+Reset/Initialize
+
+This function results in a reset message being issued to the physical device.
+
+INPUT PARAMETER STRUCTURE
+
+FIELD            LENGTH
+Device Handle    WORD
+Sense Data Size  WORD
+
+  FUNCTION CATEGORY : 80H
+  FUNCTION CODE     : 45H
+
+This function requires a device handle to be passed in the request.  The
+device must be allocated by the device-class driver before calling this
+function.  The function category and function code must be set up as shown
+above.
+
+DATA BUFFER
+
+This function does not require a data buffer.  Status is returned in the
+Status field of the request packet.
+
+
+
+
+
+
+
+            Appendix B.  OS/2 SCSI Device Driver Interface Specification  B-5
+
+
+Enable Adapter Cache
+
+This function enables the adapter cache capability for all subsequent
+commands to this device.
+
+INPUT PARAMETER STRUCTURE
+
+FIELD            LENGTH
+Device Handle    WORD
+
+  FUNCTION CATEGORY : 80H
+  FUNCTION CODE     : 4DH
+
+This function requires a device handle to be passed in the request.  The
+device must be allocated by the device-class driver before calling this
+function.  The function category and function code must be set up as shown
+above.
+
+DATA BUFFER
+
+This function does not require a data buffer.  Status is returned in the
+Status field of the request packet.
+
+
+Disable Adapter Cache
+
+This function disables the adapter cache capability for subsequent commands
+to the specified device.
+
+INPUT PARAMETER STRUCTURE
+
+FIELD            LENGTH
+Device Handle    WORD
+
+  FUNCTION CATEGORY : 80H
+  FUNCTION CODE     : 4EH
+
+This function requires a device handle to be passed in the request.  The
+device must be allocated by the device-class driver before calling this
+function.  The function category and function code must be set up as shown
+above.
+
+DATA BUFFER
+
+This function does not require a data buffer.  Status is returned in the
+Status field of the request packet.
+
+
+
+
+
+
+
+
+
+
+            Appendix B.  OS/2 SCSI Device Driver Interface Specification  B-6
+
+
+Return Adapter Cache Status
+
+This function returns the adapter cache status for the specified device.
+
+INPUT PARAMETER STRUCTURE
+
+FIELD            LENGTH
+Device Handle    WORD
+
+  FUNCTION CATEGORY : 80H
+  FUNCTION CODE     : 4FH
+
+This function requires a device handle to be passed in the request.  The
+device must be allocated by the device-class driver before calling this
+function.  The function category and function code must be set up as shown
+above.
+
++---------------------------------------------------------------------------+
+| Table  B-2. Data Buffer                                                   |
++-------------------------------------+-------------------------------------+
+| FIELD NAME                          | LENGTH                              |
++-------------------------------------+-------------------------------------+
+| Adapter Cache Status                | BYTE                                |
++-------------------------------------+-------------------------------------+
+
+  Adapter Cache Status : 00H  Enabled
+                         01H  Disabled
+
+
+Set Device Timeout
+
+This function sets the timeout value for this device.
+
+INPUT PARAMETER STRUCTURE
+
+FIELD            LENGTH
+Timeout Value    DWORD
+
+  FUNCTION CATEGORY : 80H
+  FUNCTION CODE     : 50H
+
+This function requires a device handle and a timeout value to be passed in
+the request.  The timeout value is in milliseconds.  The device must be
+allocated by the device-class driver before calling this function.  The
+function category and function code must be set up as shown above.
+
+DATA BUFFER
+
+This function does not require a data buffer.  Status is returned in the
+Status field of the request packet.
+
+
+
+
+
+
+            Appendix B.  OS/2 SCSI Device Driver Interface Specification  B-7
+
+
+Read Device Timeout
+
+This function returns the current timeout value for this device.
+
+INPUT PARAMETER STRUCTURE
+
+FIELD            LENGTH
+Device Handle    WORD
+
+  FUNCTION CATEGORY : 80H
+  FUNCTION CODE     : 51H
+
+This function requires a device handle to be passed in the request.  The
+device must be allocated by the device-class driver before calling this
+function.  The function category and function code must be set up as shown
+above.
+
++---------------------------------------------------------------------------+
+| Table  B-3. Data Buffer                                                   |
++-----------------------------+---------------------------------------------+
+| FIELD NAME                  | LENGTH                                      |
++-----------------------------+---------------------------------------------+
+| Timeout Value               | DWORD                                       |
++-----------------------------+---------------------------------------------+
+
+The timeout value is in milliseconds.
+
+
+Transfer SCB
+
+This function causes an SCB or a chain of SCBs to be sent to the adapter.
+
++---------------------------------------------------------------------------+
+| Table  B-4. Input Parameter Structure                                     |
++--------------------------------------------------------+------------------+
+| FIELD NAME                                             | LENGTH           |
++--------------------------------------------------------+------------------+
+| DEVICE HANDLE                                          | WORD             |
++--------------------------------------------------------+------------------+
+| SENSE DATA SIZE                                        | WORD             |
++--------------------------------------------------------+------------------+
+| PHYSICAL POINTER TO SCB                                | DWORD            |
++--------------------------------------------------------+------------------+
+| LOGICAL POINTER TO SCB CHAIN HEADER                    | DWORD            |
++--------------------------------------------------------+------------------+
+| FLAGS                                                  | BYTE             |
++--------------------------------------------------------+------------------+
+
+  FUNCTION CATEGORY : 80H
+  FUNCTION CODE     : 52H
+
+This function requires a device handle to be passed in the request.  The
+device must be allocated by the device-class driver before calling this
+
+
+
+            Appendix B.  OS/2 SCSI Device Driver Interface Specification  B-8
+
+
+function.  The function category and function code are to be set up as shown
+above.
+
+Flags
+
+Bit 0 =   0 Normal Length SCB
+          1 Long SCB
+
+A normal length SCB is used to send generic SCSI commands to a device.  The
+long SCB is used to send a vendor-unique SCSI command embedded in the SCB.
+
+DATA BUFFER
+
+If an error occurs, the data buffer might contain sense data; the return code
+indicates whether the sense data is valid.  A termination status block also
+might be returned.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            Appendix B.  OS/2 SCSI Device Driver Interface Specification  B-9
+
+
+SCB CHAIN HEADER
+
+
+          +00H  +----------------------------+
+                |   Reserved                 |
+          +02H  |----------------------------|
+                |   Logical Pointer to next  |
+                |-  SCB Chain Header        -|
+                |                            |
+          +06H  |----------------------------|
+                |   Reserved                 |
+          +08H  |----------------------------|
+                |   Reserved                 |
+          +0AH  |----------------------------|
+                |   Logical Pointer to TSB   |
+                |-                          -|
+                |                            |
+          +0EH  |----------------------------|
+                |   Reserved                 |
+          +10H  |----------------------------|
+                |                            |
+                |                            |
+                |            SCB             |
+                |                            |
+                |        Immediately         |
+                |                            |
+                |           Follows          |
+                |                            |
+                |             the            |
+                |                            |
+                |            Chain           |
+                |                            |
+                |           Header           |
+                |                            |
+                |                            |
+                +----------------------------+
+
+Refer to the IBM Personal System/2 MicroChannel SCSI Adapter Technical
+Reference for a description of the SCB architecture.
+
+
+Allocate Device
+
+This function allocates a SCSI peripheral device and returns the device
+handle that will be used to access the device.
+
+INPUT PARAMETER STRUCTURE
+
+FIELD                 LENGTH
+Device Peripheral Type        BYTE
+Device Type Flags     BYTE
+Nth Available         WORD
+
+
+
+
+           Appendix B.  OS/2 SCSI Device Driver Interface Specification  B-10
+
+
+  FUNCTION CATEGORY : 80H
+  FUNCTION CODE     : 55H
+
+This function requires a device type, device type flags, and Nth available
+device to be passed in the request.  The device type flags define the
+removable media indicator.  The most significant bit of the device type flags
+set indicates that the media is removable.  The Nth available is the Nth
+device in the device type group.  If Nth available is 0, the next available
+device is returned.
+
+o   SCSI DEVICE TYPES
+
+    Direct Access           0x00
+    Sequential Access       0x01
+    Printer                 0x02
+    Processor               0x03
+    Write Once/Read Many    0x04
+    CD-ROM                  0x05
+    Scanner                 0x06
+    Optical Memory          0x07
+    Medium Changer          0x08
+    Communications          0x09
+
+
+DATA BUFFER
+
++---------------------------------------------------------------------------+
+| Table  B-5. Data Buffer                                                   |
++-----------------------------+---------------------------------------------+
+| FIELD NAME                  | LENGTH                                      |
++-----------------------------+---------------------------------------------+
+| Device Handle               | WORD                                        |
++-----------------------------+---------------------------------------------+
+
+Device Handle
+Returned to the caller.
+
+
+Deallocate Device
+
+This function deallocates the SCSI Peripheral Device assigned to this device
+handle.
+
+INPUT PARAMETER STRUCTURE
+
+FIELD            LENGTH
+Device Handle    WORD
+
+  FUNCTION CATEGORY : 80H
+  FUNCTION CODE     : 54H
+
+This function requires a device handle to be passed in the request.  The
+device must be allocated by the device-class driver before calling this
+
+
+
+           Appendix B.  OS/2 SCSI Device Driver Interface Specification  B-11
+
+
+function.  The function category and function code must be set up as shown
+above.
+
+DATA BUFFER
+
+This function does not require a data buffer.  Status is returned in the
+Status field of the request packet.
+
+
+Return Peripheral Type Count
+
+This function returns a count of the number of devices of a particular type
+that are detected.
+
+INPUT PARAMETER STRUCTURE
+
+FIELD                 LENGTH
+Device Peripheral Type        BYTE
+Device Type Flags     BYTE
+
+  FUNCTION CATEGORY : 80H
+  FUNCTION CODE     : 56H
+
+This function requires a device type and device type flags to be passed in
+the request.  The device type flags define the removable media indicator.
+The most significant bit of the device type flags set indicates that the
+media is removable.  Function category and function code must be set up as
+shown above.
+
++---------------------------------------------------------------------------+
+| Table  B-6. Data Buffer                                                   |
++-----------------------------+---------------------------------------------+
+| FIELD NAME                  | LENGTH                                      |
++-----------------------------+---------------------------------------------+
+| Count of Device Type        | WORD                                        |
+| Requested                   |                                             |
++-----------------------------+---------------------------------------------+
+
+Count of Device Type Requested
+Returned when the request is completed successfully.
+
+
+Send Abort
+
+This function causes an abort request to be sent to the device.
+
+INPUT PARAMETER STRUCTURE
+
+FIELD            LENGTH
+Device Handle    WORD
+Sense Data Size  WORD
+Reserved         DWORD
+
+
+
+
+           Appendix B.  OS/2 SCSI Device Driver Interface Specification  B-12
+
+
+  FUNCTION CATEGORY : 80H
+  FUNCTION CODE     : 57H
+
+DATA BUFFER
+
+This function does not require a data buffer.  Status is returned in the
+Status field of the request packet.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+           Appendix B.  OS/2 SCSI Device Driver Interface Specification  B-13
+
+
+RETURN CODES
+
+The following tables describe the SCSI return codes.
+
++---------------------------------------------------------------------------+
+| Table  B-7. Return Code Bit Categories                                    |
++------------------+--------------------------------------------------------+
+| BIT NUMBERS      | CATEGORY                                               |
++------------------+--------------------------------------------------------+
+| 15               | ERROR                                                  |
++------------------+--------------------------------------------------------+
+| 14 - 10          | RESERVED                                               |
++------------------+--------------------------------------------------------+
+| 9                | BUSY                                                   |
++------------------+--------------------------------------------------------+
+| 8                | DONE                                                   |
++------------------+--------------------------------------------------------+
+| 7                | SCSI ERROR                                             |
++------------------+--------------------------------------------------------+
+| 6 - 0            | ERROR CODE (when Bit 15 = 1)                           |
++------------------+--------------------------------------------------------+
+
++---------------------------------------------------------------------------+
+| Table  B-8. Bit Descriptions                                              |
++------------------+--------------------------------------------------------+
+| BIT              | DESCRIPTION                                            |
++------------------+--------------------------------------------------------+
+| 07               | SCSI Driver-Specific Error                             |
++------------------+--------------------------------------------------------+
+| 08               | Operation Complete                                     |
++------------------+--------------------------------------------------------+
+| 15               | Request Completed with Error                           |
++------------------+--------------------------------------------------------+
+
++---------------------------------------------------------------------------+
+| Table  B-9 (Page 1 of 2). SCSI Error Codes                                |
++------------------+--------------------------------------------------------+
+| ERROR CODE       | DESCRIPTION                                            |
++------------------+--------------------------------------------------------+
+| 00H              | Device Error (Sense Data Returned)                     |
++------------------+--------------------------------------------------------+
+| 01H              | Timeout Error                                          |
++------------------+--------------------------------------------------------+
+| 02H              | Unusual Wakeup Error                                   |
++------------------+--------------------------------------------------------+
+| 03H              | DevHlp Error                                           |
++------------------+--------------------------------------------------------+
+| 04H              | Request Block Not Available                            |
++------------------+--------------------------------------------------------+
+| 05H              | Maximum Device Support Exceeded                        |
++------------------+--------------------------------------------------------+
+| 06H              | Interrupt Level Not Available                          |
++------------------+--------------------------------------------------------+
+
+
+
+           Appendix B.  OS/2 SCSI Device Driver Interface Specification  B-14
+
+
++---------------------------------------------------------------------------+
+| Table  B-9 (Page 2 of 2). SCSI Error Codes                                |
++------------------+--------------------------------------------------------+
+| ERROR CODE       | DESCRIPTION                                            |
++------------------+--------------------------------------------------------+
+| 07H              | Device Not Available                                   |
++------------------+--------------------------------------------------------+
+| 08H              | More IRQ Levels than Adapters                          |
++------------------+--------------------------------------------------------+
+| 09H              | Device Busy                                            |
++------------------+--------------------------------------------------------+
+| 0AH              | Request Sense Failed                                   |
++------------------+--------------------------------------------------------+
+| 0BH              | Adapter Cache Not Supported                            |
++------------------+--------------------------------------------------------+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+           Appendix B.  OS/2 SCSI Device Driver Interface Specification  B-15
+
+
+The SCSI device driver can return any of the standard OS/2 device driver
+return codes as well as the specific error codes listed above.
+
+If Bit 15 is set, Bits 0 - 6 contain an error code.  If, in addition, Bit 7
+is set, the error code in Bits 0 - 6 is one of the SCSI device
+driver-specific error codes from the table.  Otherwise, it is a standard OS/2
+device driver error code, such as unknown_command or invalid_parameter.
+
+The DONE bit always is set by the SCSI device driver so that a successful
+return code is 0100H, not 0.
+
+At Init time, the returned status is OR'd with FF00H by the kernel.
+
+
+ERROR RECOVERY PROCEDURE
+
+The SCSI device driver will not perform any error recovery on the SCSI
+adapter.  The SCSI adapter will not be allocated and, therefore, no error
+recovery procedure is followed.
+
+If a Check Condition is detected, the SCSI device driver will request sense
+data from the device and return it to the device-specific driver if
+successful.  A return code of xx80H indicates that sense data has been
+returned.
+
+
+DEVICE-CLASS DRIVER MODEL
+
+The device-class driver model is described briefly here to assist in the
+design of a device-class driver.
+
+
+OVERVIEW
+
+The device-class driver receives OS/2 request packets from the kernel.  It is
+responsible for mapping the received request to a generic IOCtl request to be
+passed to the SCSI device driver.  When a request from the kernel results in
+sending a Transfer SCB command to the SCSI driver, the device-class driver
+allocates the SCB chain header and formats the SCB and the SCB chain header.
+The TSB also must be allocated.  When a request from the kernel results in
+multiple Transfer SCBs, the device-class driver chains the SCBs and sends
+only one Transfer SCB command to the SCSI driver.  This achieves better
+performance and guarantees that requests are processed sequentially.
+
+The device-class driver calls the SCSI driver to send the request to the
+device.  The SCSI driver returns to the device-class driver after the request
+is completed.  When a Transfer SCB request completes with an error, the SCSI
+driver performs a Request Sense command to the device to obtain sense data.
+The sense data is passed back to the caller in the data buffer area of the
+generic IOCtl request packet.  The device-class driver might take some
+error-recovery steps at this point or return to the kernel, passing the
+return code from the device.
+
+
+
+
+           Appendix B.  OS/2 SCSI Device Driver Interface Specification  B-16
+
+
+INITIALIZATION ROUTINE
+
+This routine is called when the device-class driver is first loaded into the
+system.  This routine performs all initialization required for the
+device-class driver and the device.  At Init time, all calls to the SCSI
+driver are made through the DosDevIoctl interface.  Typically, initialization
+performs the functions in the following list:
+
+1.  Performs a return peripheral device count to determine the count of
+    devices attached.
+2.  Allocates the device.
+3.  Queries the device to determine whether it is supported.
+4.  Sets the return code in the request block.
+5.  Returns the offsets for the end of the code and data segments.
+
+
+STRATEGY ROUTINE
+
+This routine receives requests from the kernel at task time.  It builds a
+generic IOCtl request packet and sends it to the SCSI driver through the IDC
+entry point.
+
+The generic IOCtl request contains the following parameters:
+
+o   FUNCTION CATEGORY
+    80H
+
+o   FUNCTION CODE
+    Represents function to be performed by the SCSI driver.
+
+o   PARAMETER BUFFER ADDRESS
+    Contains a pointer to the parameters required for the function to be
+    performed.
+
+o   DATA BUFFER ADDRESS
+    Contains a pointer to the data buffer where returned data is stored.
+
+
+INTERRUPT HANDLER
+
+An interrupt handler is not required for the device-class driver.  All
+interrupts from the SCSI peripheral devices are handled by the SCSI driver.
+
+
+DMA DATA STRUCTURES
+
+All data structures that will be accessed by the DMA must be locked into
+memory before calling SCSI.SYS.  These data structures include the following:
+
+o   SCB chain header and SCBs
+o   Scatter/gather list
+o   Scatter/gather data areas
+o   TSB
+o   Sense data area
+
+
+           Appendix B.  OS/2 SCSI Device Driver Interface Specification  B-17
+
+
+o   User data areas.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+           Appendix B.  OS/2 SCSI Device Driver Interface Specification  B-18
+
+
+BIBLIOGRAPHY
+
+
+
+
+
+For more information, refer to one        IBM Personal System/2(*) and
+or more of these related                  Personal Computer BIOS Technical
+publications.                             Reference Supplement.  Publication
+                                          number S15F-2161.
+
+IBM PUBLICATIONS                          IBM Personal System/2(*) and
+                                          MicroChannel SCSI Adapter with Cache
+OS/2 2.0 Technical Library, Physical      Technical Reference.   Publication
+Device Driver Reference.                  number S68X-2365.
+Publication number 10G6266.
+                                          OS/2 SCSI Device Driver Interface
+This book defines the interface           Specification.  Revision level 1.31,
+between the OS/2 2.0 kernel and an        dated March 22, 1991.  Issued by
+installable device driver.  It            D.T. Feriozi and R.B. Tegart,
+includes much useful information,         Department 6G9, IBM Boca Raton.
+including full specifications for
+the OS/2 2.0 device helper (DevHlp)       Defines the client programming
+services.                                 interfaces to SCSI.SYS and
+                                          OS2SCSI.SYS.
+IBM Personal System/2(*) and
+Personal Computer BIOS Technical
+Reference.  Publication number            STANDARDS PUBLICATIONS
+S68X-2341.
+                                          Small Computer Systems Interface - 2
+You also will want to refer to the        (SCSI-2) X3T9/89-042.  Revision 10g.
+following supplement, which provides      Dated September 1, 1991.
+a programming specification for
+ABIOS SCB Transfer.                       American National Standards
+                                          Institute draft proposal for SCSI-2.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                            Bibliography  X-8
+

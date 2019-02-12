@@ -1,0 +1,3 @@
+.\src\strategy.c
+.\src\strategy.c(43) : warning C4016: 'ioctl' : no function return type, using int as default
+.\src\strategy.c(43) : warning C4071: 'ioctl' : no function prototype given
